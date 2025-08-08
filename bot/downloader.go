@@ -1,66 +1,86 @@
 package bot
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
-type YTDLPMetadata struct {
-	Extractor string `json:"extractor"`
-}
+const basePath = "dump"
 
 func DownloadVideo(url string) (string, int64, string, error) {
-	return runYTDLP(url, "")
+	return runYTDLP(url, "video", nil)
 }
 
 func DownloadAudio(url string) (string, int64, string, error) {
-	return runYTDLP(url, "--extract-audio --audio-format mp3")
+	extraArgs := []string{"-x", "--audio-format", "mp3"}
+	return runYTDLP(url, "audio", extraArgs)
 }
 
-func runYTDLP(url, extraArgs string) (string, int64, string, error) {
-
-	cmdMeta := exec.Command("yt-dlp", "-j", url)
-	var metaOut bytes.Buffer
-	cmdMeta.Stdout = &metaOut
-	if err := cmdMeta.Run(); err != nil {
-		return "", 0, "", fmt.Errorf("gagal ambil metadata: %w", err)
+func runYTDLP(url, fileType string, extraArgs []string) (string, int64, string, error) {
+	downloadPath := filepath.Join(basePath, fileType)
+	if err := os.MkdirAll(downloadPath, os.ModePerm); err != nil {
+		return "", 0, "", fmt.Errorf("gagal membuat direktori: %w", err)
 	}
 
-	var meta YTDLPMetadata
-	if err := json.Unmarshal(metaOut.Bytes(), &meta); err != nil {
-		return "", 0, "", fmt.Errorf("gagal parse metadata: %w", err)
+	outputTemplate := filepath.Join(downloadPath, "%(title)s.%(ext)s")
+	if fileType == "audio" {
+		outputTemplate = filepath.Join(downloadPath, "%(title)s.mp3")
 	}
 
-	// Download file
-	outputTemplate := "%(title)s.%(ext)s"
-	args := []string{"-o", outputTemplate}
-	if extraArgs != "" {
-		args = append(args, strings.Split(extraArgs, " ")...)
+	args := []string{
+		url,
+		"-o", outputTemplate,
 	}
-	args = append(args, url)
+	if len(extraArgs) > 0 {
+		args = append(args, extraArgs...)
+	}
 
 	cmd := exec.Command("yt-dlp", args...)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+
+	fmt.Printf("Menjalankan perintah: yt-dlp %s\n", strings.Join(args, " "))
+
 	if err := cmd.Run(); err != nil {
-		return "", 0, "", fmt.Errorf("gagal download: %w", err)
+		return "", 0, "", fmt.Errorf("gagal menjalankan yt-dlp: %w\nstderr: %s", err, stderr.String())
 	}
 
-	matches, _ := filepath.Glob("*")
-	var latestFile string
-	var latestSize int64
-	for _, f := range matches {
-		if strings.HasSuffix(f, ".mp4") || strings.HasSuffix(f, ".mkv") || strings.HasSuffix(f, ".mp3") {
-			info, _ := os.Stat(f)
-			if info.Size() > latestSize {
-				latestFile = f
-				latestSize = info.Size()
-			}
+	var newestFile string
+	var newestTime time.Time
+
+	files, err := os.ReadDir(downloadPath)
+	if err != nil {
+		return "", 0, "", fmt.Errorf("gagal membaca direktori unduhan '%s': %w", downloadPath, err)
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		info, err := file.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(newestTime) {
+			newestTime = info.ModTime()
+			newestFile = filepath.Join(downloadPath, file.Name())
 		}
 	}
 
-	return latestFile, latestSize, meta.Extractor, nil
+	if newestFile == "" {
+		return "", 0, "", fmt.Errorf("gagal menentukan file terbaru di direktori unduhan")
+	}
+
+	finalInfo, err := os.Stat(newestFile)
+	if err != nil {
+		return "", 0, "", fmt.Errorf("gagal stat file terbaru '%s': %w", newestFile, err)
+	}
+
+	provider := "yt-dlp"
+
+	return newestFile, finalInfo.Size(), provider, nil
 }
