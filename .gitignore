@@ -1,2 +1,8 @@
+#  IDE
 .idea
+
+#Dump
 dump
+
+#TXT File
+*.txt
