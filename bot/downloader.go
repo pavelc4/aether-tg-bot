@@ -9,25 +9,23 @@ import (
 	"time"
 )
 
-const basePath = "dump"
-
 func DownloadVideo(url string) (string, int64, string, error) {
-	return runYTDLP(url, "video", nil)
+	return runYTDLP(url, nil)
 }
 
 func DownloadAudio(url string) (string, int64, string, error) {
 	extraArgs := []string{"-x", "--audio-format", "mp3"}
-	return runYTDLP(url, "audio", extraArgs)
+	return runYTDLP(url, extraArgs)
 }
 
-func runYTDLP(url, fileType string, extraArgs []string) (string, int64, string, error) {
-	downloadPath := filepath.Join(basePath, fileType)
-	if err := os.MkdirAll(downloadPath, os.ModePerm); err != nil {
-		return "", 0, "", fmt.Errorf("gagal membuat direktori: %w", err)
+func runYTDLP(url string, extraArgs []string) (string, int64, string, error) {
+	downloadPath, err := os.MkdirTemp("", "aether-dl-")
+	if err != nil {
+		return "", 0, "", fmt.Errorf("gagal membuat direktori sementara: %w", err)
 	}
 
 	outputTemplate := filepath.Join(downloadPath, "%(title)s.%(ext)s")
-	if fileType == "audio" {
+	if len(extraArgs) > 0 {
 		outputTemplate = filepath.Join(downloadPath, "%(title)s.mp3")
 	}
 
@@ -46,6 +44,7 @@ func runYTDLP(url, fileType string, extraArgs []string) (string, int64, string, 
 	fmt.Printf("Menjalankan perintah: yt-dlp %s\n", strings.Join(args, " "))
 
 	if err := cmd.Run(); err != nil {
+		_ = os.RemoveAll(downloadPath)
 		return "", 0, "", fmt.Errorf("gagal menjalankan yt-dlp: %w\nstderr: %s", err, stderr.String())
 	}
 
@@ -72,6 +71,7 @@ func runYTDLP(url, fileType string, extraArgs []string) (string, int64, string, 
 	}
 
 	if newestFile == "" {
+		_ = os.RemoveAll(downloadPath)
 		return "", 0, "", fmt.Errorf("gagal menentukan file terbaru di direktori unduhan")
 	}
 
