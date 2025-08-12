@@ -2,10 +2,8 @@ package bot
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -14,6 +12,7 @@ import (
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
+	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 )
 
@@ -42,7 +41,16 @@ func formatUptime(uptimeSec uint64) string {
 	minutes := (uptimeSec % (60 * 60)) / 60
 	seconds := uptimeSec % 60
 
-	return fmt.Sprintf("%dd %dh %dm %ds", days, hours, minutes, seconds)
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh %dm %ds", days, hours, minutes, seconds)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
+	}
+	if minutes > 0 {
+		return fmt.Sprintf("%dm %ds", minutes, seconds)
+	}
+	return fmt.Sprintf("%ds", seconds)
 }
 
 var markdownV2Replacer = strings.NewReplacer(
@@ -63,7 +71,7 @@ func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		handleDownloadCommand(bot, msg)
 	case "img":
 		handleImageCommand(bot, msg)
-	case "status":
+	case "stats":
 		handleStatusCommand(bot, msg)
 	default:
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Command tidak dikenal. Ketik /help untuk melihat daftar perintah."))
@@ -189,78 +197,59 @@ func sendFileWithMeta(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath stri
 	}
 }
 
-func createProgressBar(percentage float64, length int) string {
-	if percentage > 100 {
-		percentage = 100
-	}
-	if percentage < 0 {
-		percentage = 0
-	}
-
-	filledBlocks := int(float64(length) * percentage / 100)
-	emptyBlocks := length - filledBlocks
-
-	return "[" + strings.Repeat("█", filledBlocks) + strings.Repeat("░", emptyBlocks) + "]"
-}
-
 func handleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	hostInfo, err := host.Info()
-	if err != nil {
-		log.Printf("Error getting host info: %v", err)
-	}
+	hostInfo, _ := host.Info()
+	cpuCounts, _ := cpu.Counts(true)
+	cpuUsage, _ := cpu.Percent(time.Second, false)
+	ramInfo, _ := mem.VirtualMemory()
+	diskInfo, _ := disk.Usage("/")
+	netIO, _ := net.IOCounters(false)
 
-	cpuUsage, err := cpu.Percent(time.Second, false)
-	if err != nil || len(cpuUsage) == 0 {
-		log.Printf("Error getting cpu usage: %v", err)
-		cpuUsage = []float64{0.0}
+	var totalTraffic uint64
+	var bytesSent uint64
+	var bytesRecv uint64
+	if len(netIO) > 0 {
+		bytesSent = netIO[0].BytesSent
+		bytesRecv = netIO[0].BytesRecv
+		totalTraffic = bytesSent + bytesRecv
 	}
-
-	ramInfo, err := mem.VirtualMemory()
-	if err != nil {
-		log.Printf("Error getting ram info: %v", err)
-	}
-
-	diskInfo, err := disk.Usage("/")
-	if err != nil {
-		log.Printf("Error getting disk info: %v", err)
-	}
-
-	var memStats runtime.MemStats
-	runtime.ReadMemStats(&memStats)
 
 	pid := int32(os.Getpid())
-	proc, err := process.NewProcess(pid)
-	procCPU := 0.0
-	procRAM := uint64(0)
-	if err == nil {
-		procCPU, _ = proc.CPUPercent()
-		memInfo, _ := proc.MemoryInfo()
-		if memInfo != nil {
-			procRAM = memInfo.RSS
-		}
-	} else {
-		log.Printf("Error getting process info: %v", err)
-	}
+	proc, _ := process.NewProcess(pid)
+	procRAMInfo, _ := proc.MemoryInfo()
 
-	statusText := fmt.Sprintf(
-		"📊 Status Server\n\n"+
-			"🖥️ CPU:  %.2f%% %s\n"+
-			"📊 RAM:  %.2f%% %s\n"+
-			"🕒 Uptime: %s\n"+
-			"🗄️ Disk: %.2f%% %s\n\n"+
-			"🔄 Proses Go\n"+
-			"🔥 CPU Usage: %.2f%%\n"+
-			"📊 RAM Usage: %s\n"+
-			"🗃️ Heap Alloc: %s",
-		cpuUsage[0], createProgressBar(cpuUsage[0], 12),
-		ramInfo.UsedPercent, createProgressBar(ramInfo.UsedPercent, 12),
+	statusText := fmt.Sprintf(`
+			⚙️ *System:*
+			├─ CPU: %.2f%% (%d-core)
+			├─ RAM: %s / %s (%.2f%%)
+			├─ Disk: %s / %s (%.2f%%)
+			└─ Uptime: %s
+			
+			🐹 *App:*
+			├─ Latency: 0 ms
+			├─ Active Workers: 0
+			└─ RAM Usage: %s
+			
+			🌐 *Networks:*
+			├─ In: %s
+			├─ Out: %s
+			└─ Total Traffic: %s`,
+		cpuUsage[0],
+		cpuCounts,
+		formatFileSize(int64(ramInfo.Used)),
+		formatFileSize(int64(ramInfo.Total)),
+		ramInfo.UsedPercent,
+		formatFileSize(int64(diskInfo.Used)),
+		formatFileSize(int64(diskInfo.Total)),
+		diskInfo.UsedPercent,
 		formatUptime(hostInfo.Uptime),
-		diskInfo.UsedPercent, createProgressBar(diskInfo.UsedPercent, 12),
-		procCPU,
-		formatFileSize(int64(procRAM)),
-		formatFileSize(int64(memStats.Alloc)),
+		formatFileSize(int64(procRAMInfo.RSS)),
+		formatFileSize(int64(bytesRecv)),
+		formatFileSize(int64(bytesSent)),
+		formatFileSize(int64(totalTraffic)),
 	)
 
 	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, statusText)
+	msgConfig.ParseMode = "Markdown"
 	bot.Send(msgConfig)
 }
