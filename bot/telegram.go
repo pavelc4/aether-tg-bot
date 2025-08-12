@@ -20,8 +20,13 @@ func StartBot(token string) error {
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
-		if update.Message != nil && update.Message.IsCommand() {
+		if update.Message == nil {
+			continue
+		}
+		if update.Message.IsCommand() {
 			handleCommand(bot, update.Message)
+		} else {
+			handleMessage(bot, update.Message)
 		}
 	}
 	return nil
