@@ -2,6 +2,10 @@ package bot
 
 import (
 	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +21,7 @@ import (
 	"github.com/shirou/gopsutil/v3/process"
 )
 
+// formatFileSize mengubah ukuran byte menjadi format yang lebih mudah dibaca (KB, MB, GB).
 func formatFileSize(size int64) string {
 	const (
 		B  = 1
@@ -30,12 +35,13 @@ func formatFileSize(size int64) string {
 	case size >= MB:
 		return fmt.Sprintf("%.2f MB", float64(size)/MB)
 	case size >= KB:
-		return fmt.Sprintf("%.2f KB", float64(size)/KB)
+		return fmt.Sprintf("%.2f KB", float64(size)/KB) // Diperbaiki agar menggunakan float
 	default:
 		return fmt.Sprintf("%d Bytes", size)
 	}
 }
 
+// formatUptime mengubah detik menjadi format hari, jam, menit, detik.
 func formatUptime(uptimeSec uint64) string {
 	days := uptimeSec / (60 * 60 * 24)
 	hours := (uptimeSec % (60 * 60 * 24)) / (60 * 60)
@@ -54,16 +60,46 @@ func formatUptime(uptimeSec uint64) string {
 	return fmt.Sprintf("%ds", seconds)
 }
 
+// markdownV2Replacer untuk melakukan escape pada karakter khusus MarkdownV2.
 var markdownV2Replacer = strings.NewReplacer(
 	"_", "\\_", "*", "\\*", "[", "\\[", "]", "\\]", "(", "\\(", ")", "\\)",
 	"~", "\\~", "`", "\\`", ">", "\\>", "#", "\\#", "+", "\\+", "-", "\\-",
 	"=", "\\=", "|", "\\|", "{", "\\{", "}", "\\}", ".", "\\.", "!", "\\!",
 )
 
+// escapeMarkdownV2 menerapkan replacer ke string.
 func escapeMarkdownV2(s string) string {
 	return markdownV2Replacer.Replace(s)
 }
 
+// buildMediaCaption adalah fungsi terpusat untuk membuat caption media yang konsisten.
+func buildMediaCaption(source, url, fileType string, fileSize int64, duration time.Duration, user string) string {
+	escapedSource := escapeMarkdownV2(strings.ToLower(source))
+	escapedURL := escapeMarkdownV2(url)
+	escapedFileType := escapeMarkdownV2(fileType)
+	escapedSize := escapeMarkdownV2(formatFileSize(fileSize))
+	escapedDuration := escapeMarkdownV2(duration.String())
+	escapedUser := escapeMarkdownV2(user)
+
+	// Format caption yang konsisten untuk semua jenis media.
+	captionFormat := `✅ *%s Berhasil Diunduh\!*` + "\n\n" +
+		`🔗 *Sumber:* [%s](%s)` + "\n" +
+		`💾 *Ukuran:* %s` + "\n" +
+		`⏱️ *Durasi Proses:* %s` + "\n" +
+		`👤 *Oleh:* %s`
+
+	return fmt.Sprintf(
+		captionFormat,
+		escapedFileType,
+		escapedSource,
+		escapedURL,
+		escapedSize,
+		escapedDuration,
+		escapedUser,
+	)
+}
+
+// handleCommand menangani perintah seperti /start, /help, dan /stats.
 func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	switch msg.Command() {
 	case "start", "help":
@@ -75,6 +111,7 @@ func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	}
 }
 
+// handleMessage menangani pesan teks biasa yang berisi link.
 func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	re := regexp.MustCompile(`(https?://[^\s]+)`)
 	url := re.FindString(msg.Text)
@@ -106,24 +143,57 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	start := time.Now()
 
 	if strings.Contains(finalURL, "instagram.com/p/") || strings.Contains(finalURL, "instagram.com/reel/") {
-		filePaths, err := DownloadImagesFromURL(finalURL)
+		filePaths, err := DownloadMediaWithCobalt(finalURL)
 		if err != nil {
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mengambil konten dari Instagram: "+err.Error()))
 			return
 		}
+
 		if len(filePaths) > 1 {
+			// 1. Buat caption terlebih dahulu
+			duration := time.Since(start).Truncate(time.Second)
+			var totalSize int64
+			for _, path := range filePaths {
+				if fileInfo, err := os.Stat(path); err == nil {
+					totalSize += fileInfo.Size()
+				}
+			}
+			caption := buildMediaCaption("Cobalt", finalURL, "Media", totalSize, duration, GetUserName(msg))
+
 			mediaGroup := []interface{}{}
 			for i, path := range filePaths {
 				if i >= 10 {
 					break
 				}
-				mediaGroup = append(mediaGroup, tgbotapi.NewInputMediaPhoto(tgbotapi.FilePath(path)))
+
+				photo := tgbotapi.NewInputMediaPhoto(tgbotapi.FilePath(path))
+				if i == 0 {
+					photo.Caption = caption
+					photo.ParseMode = "MarkdownV2"
+				}
+				mediaGroup = append(mediaGroup, photo)
 			}
-			group := tgbotapi.NewMediaGroup(msg.Chat.ID, mediaGroup)
-			bot.Send(group)
+			if len(mediaGroup) > 0 {
+				group := tgbotapi.NewMediaGroup(msg.Chat.ID, mediaGroup)
+				if _, err := bot.Request(group); err != nil {
+					log.Printf("Error sending media group to Telegram: %v", err)
+					bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mengirim media group: "+err.Error()))
+				}
+			}
 		} else if len(filePaths) == 1 {
-			photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FilePath(filePaths[0]))
-			bot.Send(photo)
+			filePath := filePaths[0]
+			fileInfo, err := os.Stat(filePath)
+			if err != nil {
+				log.Printf("Error getting file info for %s: %v", filePath, err)
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mendapatkan informasi file: "+err.Error()))
+				return
+			}
+			fileSize := fileInfo.Size()
+			err = processAndSendMediaWithMeta(bot, msg, filePath, fileSize, "Cobalt", start, "Media", finalURL)
+			if err != nil {
+				log.Printf("Error processing and sending media: %v", err)
+				bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mengirim media: "+err.Error()))
+			}
 		}
 		if len(filePaths) > 0 {
 			DeleteDirectory(filepath.Dir(filePaths[0]))
@@ -135,11 +205,16 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, errorMsg))
 			return
 		}
-		sendFileWithMeta(bot, msg, filePath, fileSize, source, start, "Video", url)
+		err = processAndSendMediaWithMeta(bot, msg, filePath, fileSize, source, start, "Video", url)
+		if err != nil {
+			log.Printf("Error processing and sending media: %v", err)
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mengirim media: "+err.Error()))
+		}
 		DeleteDirectory(filepath.Dir(filePath))
 	}
 }
 
+// handleHelpCommand mengirim pesan bantuan.
 func handleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	helpText := "Selamat datang di Aether Bot! ✨\n\n" +
 		"Cukup kirimkan link dari TikTok atau Instagram, dan saya akan mengunduh kontennya untuk Anda.\n\n" +
@@ -149,6 +224,7 @@ func handleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, helpText))
 }
 
+// handleDownloadCommand menangani perintah unduh eksplisit.
 func handleDownloadCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	args := strings.TrimSpace(msg.CommandArguments())
 	if args == "" {
@@ -187,94 +263,114 @@ func handleDownloadCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		source = "Facebook"
 	}
 
-	sendFileWithMeta(bot, msg, filePath, fileSize, source, start, fileType, args)
+	err = processAndSendMediaWithMeta(bot, msg, filePath, fileSize, source, start, fileType, args)
+	if err != nil {
+		log.Printf("Error processing and sending media: %v", err)
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mengirim media: "+err.Error()))
+	}
 	DeleteDirectory(filepath.Dir(filePath))
 }
-func sendFileWithMeta(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath string, fileSize int64, source string, start time.Time, fileType string, url string) {
+
+// sendDetailedMessage mengirim pesan terpisah setelah mengirim media group.
+func sendDetailedMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, source string, start time.Time, filePaths []string, url string) {
 	duration := time.Since(start).Truncate(time.Second)
 
-	escapedSource := escapeMarkdownV2(strings.ToLower(source))
-	escapedURL := escapeMarkdownV2(url)
-	escapedFileType := escapeMarkdownV2(fileType)
-	escapedSize := escapeMarkdownV2(formatFileSize(fileSize))
-	escapedDuration := escapeMarkdownV2(duration.String())
-	escapedUser := escapeMarkdownV2(GetUserName(msg))
+	var totalSize int64
+	for _, path := range filePaths {
+		if fileInfo, err := os.Stat(path); err == nil {
+			totalSize += fileInfo.Size()
+		}
+	}
 
-	caption := fmt.Sprintf(
-		`✅ *%s Berhasil Diunduh\!*
+	// Gunakan fungsi buildMediaCaption untuk konsistensi
+	caption := buildMediaCaption(source, url, "Media", totalSize, duration, GetUserName(msg))
 
-		🔗 *Sumber:* [%s](%s)
-		💾 *Ukuran:* %s
-		⏱️ *Durasi Proses:* %s
-		👤 *Oleh:* %s`,
-		escapedFileType,
-		escapedSource,
-		escapedURL,
-		escapedSize,
-		escapedDuration,
-		escapedUser,
-	)
+	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, caption)
+	msgConfig.ParseMode = "MarkdownV2"
+	bot.Send(msgConfig)
+}
 
+// processAndSendMediaWithMeta memproses dan mengirim satu media dengan metadata.
+func processAndSendMediaWithMeta(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath string, fileSize int64, source string, start time.Time, fileType string, url string) error {
+	ext := filepath.Ext(filePath)
+	fileName := filepath.Base(filePath)
+	duration := time.Since(start).Truncate(time.Second)
+
+	// Gunakan fungsi buildMediaCaption untuk membuat caption
+	caption := buildMediaCaption(source, url, fileType, fileSize, duration, GetUserName(msg))
+
+	// Logika untuk mengirim berbagai jenis file
+	switch ext {
+	case ".jpg", ".jpeg", ".png":
+		imgFile, err := os.Open(filePath)
+		if err != nil {
+			log.Printf("Error opening image file: %v. Sending as document.", err)
+			return sendAsDocument(bot, msg, filePath, caption)
+		}
+		defer imgFile.Close()
+
+		img, _, err := image.Decode(imgFile)
+		if err != nil {
+			log.Printf("Error decoding image: %v. Sending as document.", err)
+			return sendAsDocument(bot, msg, filePath, caption)
+		}
+
+		reencodedFilePath := filepath.Join(filepath.Dir(filePath), "reencoded_"+fileName)
+		reencodedFile, err := os.Create(reencodedFilePath)
+		if err != nil {
+			log.Printf("Error creating re-encoded file: %v. Sending as document.", err)
+			return sendAsDocument(bot, msg, filePath, caption)
+		}
+		defer reencodedFile.Close()
+		defer os.Remove(reencodedFilePath)
+
+		if ext == ".jpg" || ext == ".jpeg" {
+			err = jpeg.Encode(reencodedFile, img, &jpeg.Options{Quality: 90})
+		} else { // .png
+			err = png.Encode(reencodedFile, img)
+		}
+
+		if err != nil {
+			log.Printf("Error re-encoding image: %v. Sending as document.", err)
+			return sendAsDocument(bot, msg, filePath, caption)
+		}
+
+		photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FilePath(reencodedFilePath))
+		photo.Caption = caption
+		photo.ParseMode = "MarkdownV2"
+		if _, err := bot.Send(photo); err != nil {
+			log.Printf("Error sending re-encoded photo: %v. Falling back to document.", err)
+			return sendAsDocument(bot, msg, reencodedFilePath, caption)
+		}
+		return nil
+
+	case ".mp4", ".webm", ".mov":
+		video := tgbotapi.NewVideo(msg.Chat.ID, tgbotapi.FilePath(filePath))
+		video.Caption = caption
+		video.ParseMode = "MarkdownV2"
+		if _, err := bot.Send(video); err != nil {
+			log.Printf("Error sending video: %v. Falling back to document.", err)
+			return sendAsDocument(bot, msg, filePath, caption)
+		}
+		return nil
+
+	default: // Termasuk .gif dan tipe file lainnya
+		return sendAsDocument(bot, msg, filePath, caption)
+	}
+}
+
+// sendAsDocument adalah helper untuk mengirim file sebagai dokumen (fallback).
+func sendAsDocument(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, caption string) error {
 	doc := tgbotapi.NewDocument(msg.Chat.ID, tgbotapi.FilePath(filePath))
 	doc.Caption = caption
 	doc.ParseMode = "MarkdownV2"
 	if _, err := bot.Send(doc); err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mengirim file: "+err.Error()))
+		return fmt.Errorf("failed to send file as document: %w", err)
 	}
-}
-func handleImageCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	url := strings.TrimSpace(msg.CommandArguments())
-	if url == "" {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Harap sertakan URL postingan.\nContoh: `/img [URL]`"))
-		return
-	}
-	processingMsg, _ := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Memproses link, harap tunggu..."))
-	defer bot.Request(tgbotapi.NewDeleteMessage(msg.Chat.ID, processingMsg.MessageID))
-
-	finalURL, err := ResolveFinalURL(url)
-	if err != nil {
-		errorMsg := fmt.Sprintf("❌ Gagal memproses link: %s", err.Error())
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, errorMsg))
-		return
-	}
-
-	if strings.Contains(finalURL, "facebook.com/groups/") {
-		bot.Request(tgbotapi.NewEditMessageText(msg.Chat.ID, processingMsg.MessageID, "⏳ Link grup terdeteksi, mencoba metode khusus..."))
-		filePath, err := ScrapeFacebookGroup(finalURL)
-		if err != nil {
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mengambil gambar dari grup: "+err.Error()))
-			return
-		}
-		photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FilePath(filePath))
-		bot.Send(photo)
-		DeleteDirectory(filepath.Dir(filePath))
-	} else {
-		bot.Request(tgbotapi.NewEditMessageText(msg.Chat.ID, processingMsg.MessageID, "⏳ Link ditemukan, sedang mengambil gambar..."))
-		filePaths, err := DownloadImagesFromURL(finalURL)
-		if err != nil {
-			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mengambil gambar: "+err.Error()))
-			return
-		}
-		if len(filePaths) > 1 {
-			mediaGroup := []interface{}{}
-			for i, path := range filePaths {
-				if i >= 10 {
-					break
-				}
-				mediaGroup = append(mediaGroup, tgbotapi.NewInputMediaPhoto(tgbotapi.FilePath(path)))
-			}
-			group := tgbotapi.NewMediaGroup(msg.Chat.ID, mediaGroup)
-			bot.Send(group)
-		} else if len(filePaths) == 1 {
-			photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FilePath(filePaths[0]))
-			bot.Send(photo)
-		}
-		if len(filePaths) > 0 {
-			DeleteDirectory(filepath.Dir(filePaths[0]))
-		}
-	}
+	return nil
 }
 
+// handleStatusCommand mengirim status sistem dan bot.
 func handleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	hostInfo, _ := host.Info()
 	cpuCounts, _ := cpu.Counts(true)
@@ -283,43 +379,32 @@ func handleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	diskInfo, _ := disk.Usage("/")
 	netIO, _ := net.IOCounters(false)
 
-	var totalTraffic uint64
-	var bytesSent uint64
-	var bytesRecv uint64
+	var totalTraffic, bytesSent, bytesRecv uint64
 	if len(netIO) > 0 {
 		bytesSent = netIO[0].BytesSent
 		bytesRecv = netIO[0].BytesRecv
 		totalTraffic = bytesSent + bytesRecv
 	}
 
-	pid := int32(os.Getpid())
-	proc, _ := process.NewProcess(pid)
+	proc, _ := process.NewProcess(int32(os.Getpid()))
 	procRAMInfo, _ := proc.MemoryInfo()
 
-	statusText := fmt.Sprintf(`
-			⚙️ *System:*
-			├─ CPU: %.2f%% (%d-core)
-			├─ RAM: %s / %s (%.2f%%)
-			├─ Disk: %s / %s (%.2f%%)
-			└─ Uptime: %s
-			
-			🐹 *App:*
-			├─ Latency: 0 ms
-			├─ Active Workers: 0
-			└─ RAM Usage: %s
-			
-			🌐 *Networks:*
-			├─ In: %s
-			├─ Out: %s
-			└─ Total Traffic: %s`,
-		cpuUsage[0],
-		cpuCounts,
-		formatFileSize(int64(ramInfo.Used)),
-		formatFileSize(int64(ramInfo.Total)),
-		ramInfo.UsedPercent,
-		formatFileSize(int64(diskInfo.Used)),
-		formatFileSize(int64(diskInfo.Total)),
-		diskInfo.UsedPercent,
+	// Menggunakan MarkdownV2 dan karakter yang di-escape dengan benar
+	statusText := fmt.Sprintf(
+		"⚙️ *System:*\n"+
+			"├─ CPU: `%.2f%%` `(%d-core)`\n"+
+			"├─ RAM: `%s / %s` `(%.2f%%)`\n"+
+			"├─ Disk: `%s / %s` `(%.2f%%)`\n"+
+			"└─ Uptime: `%s`\n\n"+
+			"🐹 *App:*\n"+
+			"└─ RAM Usage: `%s`\n\n"+
+			"🌐 *Networks:*\n"+
+			"├─ In: `%s`\n"+
+			"├─ Out: `%s`\n"+
+			"└─ Total Traffic: `%s`",
+		cpuUsage[0], cpuCounts,
+		formatFileSize(int64(ramInfo.Used)), formatFileSize(int64(ramInfo.Total)), ramInfo.UsedPercent,
+		formatFileSize(int64(diskInfo.Used)), formatFileSize(int64(diskInfo.Total)), diskInfo.UsedPercent,
 		formatUptime(hostInfo.Uptime),
 		formatFileSize(int64(procRAMInfo.RSS)),
 		formatFileSize(int64(bytesRecv)),
@@ -328,6 +413,6 @@ func handleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	)
 
 	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, statusText)
-	msgConfig.ParseMode = "Markdown"
+	msgConfig.ParseMode = "MarkdownV2"
 	bot.Send(msgConfig)
 }

@@ -1,133 +1,193 @@
 package bot
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/chromedp"
 )
 
-func ScrapeFacebookGroup(pageURL string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
-	defer cancel()
+func DownloadMediaWithCobalt(mediaURL string) ([]string, error) {
+	log.Printf("Attempting to download media from %s using Cobalt API", mediaURL)
+	cobaltAPIURL := "http://localhost:8080/" // Using your self-hosted Cobalt instance
 
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath("/usr/bin/brave"),
-		chromedp.Flag("headless", true),
-		chromedp.Flag("no-sandbox", true),
-	)
-
-	allocCtx, cancel := chromedp.NewExecAllocator(ctx, opts...)
-	defer cancel()
-
-	taskCtx, cancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
-	defer cancel()
-
-	cookies, err := loadCookies("facebook-cookies.txt")
-	if err != nil {
-		return "", fmt.Errorf("gagal memuat cookies: %w. Pastikan facebook-cookies.txt ada", err)
+	requestBody := map[string]interface{}{
+		"url":          mediaURL,
+		"downloadMode": "auto", // "auto" for both video and photo
+		"videoQuality": "max",  // Max quality for video
 	}
 
-	var imageURL string
-	tasks := chromedp.Tasks{
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			cookieParams := []*network.CookieParam{}
-			for _, cookie := range cookies {
-				cookieParams = append(cookieParams, &network.CookieParam{
-					Name:   cookie.Name,
-					Value:  cookie.Value,
-					Domain: cookie.Domain,
-				})
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	log.Printf("Sending request to Cobalt API for URL: %s", mediaURL)
+
+	req, err := http.NewRequest("POST", cobaltAPIURL, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second} // Set a timeout for the HTTP request
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send HTTP request to Cobalt API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	log.Printf("Received response from Cobalt API. Status Code: %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		log.Printf("Cobalt API non-OK response body: %s", string(bodyBytes))
+		return nil, fmt.Errorf("Cobalt API returned non-OK status: %d, body: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Read the response body once for logging and decoding
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Cobalt API response body: %w", err)
+	}
+	log.Printf("Cobalt API response body: %s", string(bodyBytes))
+
+	var cobaltResponse struct {
+		Status   string `json:"status"`
+		URL      string `json:"url"`
+		Filename string `json:"filename"`
+		Picker   []struct {
+			Type string `json:"type"`
+			URL  string `json:"url"`
+		} `json:"picker"`
+		Error struct {
+			Code    string      `json:"code"`
+			Context interface{} `json:"context"`
+		} `json:"error"`
+	}
+
+	if err := json.Unmarshal(bodyBytes, &cobaltResponse); err != nil { // Use Unmarshal with bodyBytes
+		return nil, fmt.Errorf("failed to decode Cobalt API response: %w", err)
+	}
+	log.Printf("Cobalt API response status: %s", cobaltResponse.Status)
+
+	var downloadedFilePaths []string
+
+	switch cobaltResponse.Status {
+	case "tunnel", "redirect":
+		if cobaltResponse.URL != "" {
+			filePath, err := downloadDirectImage(cobaltResponse.URL, cobaltResponse.Filename) // Pass filename
+			if err != nil {
+				return nil, fmt.Errorf("failed to download media from Cobalt URL: %w", err)
 			}
-			return network.SetCookies(cookieParams).Do(ctx)
-		}),
-		chromedp.Navigate(pageURL),
+			downloadedFilePaths = append(downloadedFilePaths, filePath)
+		} else {
+			return nil, fmt.Errorf("Cobalt API returned tunnel/redirect status but no URL")
+		}
+	case "picker":
+		if len(cobaltResponse.Picker) > 0 {
+			for _, item := range cobaltResponse.Picker {
+				if item.URL != "" {
 
-		// --- LOGIKA BARU UNTUK MENGATASI HALAMAN YANG "DIAM" ---
-		// 1. Beri waktu sejenak agar halaman memuat elemen awal
-		chromedp.Sleep(5 * time.Second),
-
-		// 2. Coba cari dan klik tombol "close" pada pop-up login/cookie yang sering muncul.
-		// '[aria-label="Close"]' adalah selector umum untuk tombol X.
-		// Kita gunakan 'chromedp.Run' di sini agar tidak error jika tombolnya tidak ada.
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			log.Println("Mencoba menutup pop-up yang mungkin muncul...")
-			_ = chromedp.Run(ctx, chromedp.Click(`[aria-label="Close"]`, chromedp.NodeVisible, chromedp.ByQuery))
-			return nil
-		}),
-
-		// 3. Tunggu hingga elemen gambar utama benar-benar terlihat
-		chromedp.WaitVisible(`img[data-visualcompletion="media-vc-image"]`, chromedp.ByQuery),
-
-		// 4. Baru ambil URL gambarnya
-		chromedp.AttributeValue(`img[data-visualcompletion="media-vc-image"]`, "src", &imageURL, nil, chromedp.ByQuery),
-		// -----------------------------------------------------
+					filePath, err := downloadDirectImage(item.URL, "")
+					if err != nil {
+						log.Printf("Warning: Failed to download one item from picker: %v", err)
+						continue
+					}
+					downloadedFilePaths = append(downloadedFilePaths, filePath)
+				}
+			}
+			if len(downloadedFilePaths) == 0 {
+				return nil, fmt.Errorf("Cobalt API returned picker status but no downloadable URLs")
+			}
+		} else {
+			return nil, fmt.Errorf("Cobalt API returned picker status but empty picker array")
+		}
+	case "error":
+		return nil, fmt.Errorf("Cobalt API returned error: %s (context: %v)", cobaltResponse.Error.Code, cobaltResponse.Error.Context)
+	default:
+		return nil, fmt.Errorf("Cobalt API returned unknown status: %s", cobaltResponse.Status)
 	}
 
-	if err := chromedp.Run(taskCtx, tasks); err != nil {
-		return "", fmt.Errorf("gagal menjalankan browser otomatis: %w", err)
-	}
-
-	if imageURL == "" {
-		return "", fmt.Errorf("tidak dapat menemukan URL gambar di halaman, mungkin struktur halaman berubah atau konten tidak tersedia")
-	}
-
-	return downloadDirectImage(imageURL)
+	return downloadedFilePaths, nil
 }
 
-// ... (Sisa file loadCookies dan downloadDirectImage tetap sama)
-func loadCookies(filename string) ([]*http.Cookie, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
-
-	lines := strings.Split(string(content), "\n")
-	var cookies []*http.Cookie
-
-	for _, line := range lines {
-		if strings.HasPrefix(line, "#") || line == "" {
-			continue
-		}
-		parts := strings.Split(strings.TrimSpace(line), "\t")
-		if len(parts) == 7 {
-			cookies = append(cookies, &http.Cookie{
-				Domain: parts[0],
-				Name:   parts[5],
-				Value:  parts[6],
-			})
-		}
-	}
-	return cookies, nil
-}
-
-func downloadDirectImage(url string) (string, error) {
+func downloadDirectImage(mediaURL string, suggestedFilename string) (string, error) {
+	log.Printf("Attempting to download direct image from URL: %s (suggested filename: %s)", mediaURL, suggestedFilename)
 	tmpDir, err := os.MkdirTemp("", "aether-scrape-")
 	if err != nil {
 		return "", err
 	}
+	log.Printf("Created temporary directory: %s", tmpDir)
 
-	resp, err := http.Get(url)
+	resp, err := http.Get(mediaURL)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
-	filePath := filepath.Join(tmpDir, fmt.Sprintf("%d.jpg", time.Now().UnixNano()))
+	ext := ".tmp" // Default to a generic temporary extension
+	if suggestedFilename != "" {
+		ext = filepath.Ext(suggestedFilename)
+		if ext == "" { // If suggested filename has no extension, try Content-Type
+			contentType := resp.Header.Get("Content-Type")
+			if strings.Contains(contentType, "image/png") {
+				ext = ".png"
+			} else if strings.Contains(contentType, "image/gif") {
+				ext = ".gif"
+			} else if strings.Contains(contentType, "video/mp4") {
+				ext = ".mp4"
+			} else if strings.Contains(contentType, "video/webm") {
+				ext = ".webm"
+			} else if strings.Contains(contentType, "video/quicktime") { // For .mov
+				ext = ".mov"
+			} else if strings.Contains(contentType, "image/jpeg") {
+				ext = ".jpg"
+			} else {
+				// Fallback: try to get extension from the URL path
+				parsedURL, parseErr := url.Parse(mediaURL)
+				if parseErr == nil {
+					pathExt := filepath.Ext(parsedURL.Path)
+					if pathExt != "" {
+						ext = pathExt
+					}
+				}
+			}
+		}
+	} else { // No suggested filename, rely on Content-Type or URL
+		contentType := resp.Header.Get("Content-Type")
+		if strings.Contains(contentType, "image/png") {
+			ext = ".png"
+		} else if strings.Contains(contentType, "image/gif") {
+			ext = ".gif"
+		} else if strings.Contains(contentType, "video/mp4") {
+			ext = ".mp4"
+		} else if strings.Contains(contentType, "video/webm") {
+			ext = ".webm"
+		} else if strings.Contains(contentType, "video/quicktime") { // For .mov
+			ext = ".mov"
+		} else if strings.Contains(contentType, "image/jpeg") {
+			ext = ".jpg"
+		} else {
+			// Fallback: try to get extension from the URL path
+			parsedURL, parseErr := url.Parse(mediaURL)
+			if parseErr == nil {
+				pathExt := filepath.Ext(parsedURL.Path)
+				if pathExt != "" {
+					ext = pathExt
+				}
+			}
+		}
+	}
+
+	filePath := filepath.Join(tmpDir, fmt.Sprintf("%d%s", time.Now().UnixNano(), ext))
 	file, err := os.Create(filePath)
 	if err != nil {
 		return "", err
@@ -138,6 +198,7 @@ func downloadDirectImage(url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	log.Printf("Successfully downloaded file to: %s", filePath)
 
 	return filePath, nil
 }
