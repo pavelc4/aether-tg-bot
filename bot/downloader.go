@@ -128,7 +128,7 @@ func DownloadMediaWithCobalt(mediaURL string, audioOnly bool) ([]string, error) 
 	switch cobaltResponse.Status {
 	case "tunnel", "redirect":
 		if cobaltResponse.URL != "" {
-			filePath, err := downloadDirectImage(cobaltResponse.URL, cobaltResponse.Filename)
+			filePath, err := downloadFile(cobaltResponse.URL, cobaltResponse.Filename)
 			if err != nil {
 				return nil, fmt.Errorf("failed to download media from Cobalt URL: %w", err)
 			}
@@ -141,7 +141,7 @@ func DownloadMediaWithCobalt(mediaURL string, audioOnly bool) ([]string, error) 
 			for _, item := range cobaltResponse.Picker {
 				if item.URL != "" {
 
-					filePath, err := downloadDirectImage(item.URL, "")
+					filePath, err := downloadFile(item.URL, "")
 					if err != nil {
 						log.Printf("Warning: Failed to download one item from picker: %v", err)
 						continue
@@ -164,8 +164,8 @@ func DownloadMediaWithCobalt(mediaURL string, audioOnly bool) ([]string, error) 
 	return downloadedFilePaths, nil
 }
 
-func downloadDirectImage(mediaURL string, suggestedFilename string) (string, error) {
-	log.Printf("Attempting to download direct image from URL: %s (suggested filename: %s)", mediaURL, suggestedFilename)
+func downloadFile(mediaURL string, suggestedFilename string) (string, error) {
+	log.Printf("Attempting to download file from URL: %s (suggested filename: %s)", mediaURL, suggestedFilename)
 	tmpDir, err := os.MkdirTemp("", "aether-scrape-")
 	if err != nil {
 		return "", err
@@ -177,6 +177,10 @@ func downloadDirectImage(mediaURL string, suggestedFilename string) (string, err
 		return "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to download file: status code %d", resp.StatusCode)
+	}
 
 	ext := ".tmp"
 	if suggestedFilename != "" {
@@ -218,11 +222,18 @@ func downloadDirectImage(mediaURL string, suggestedFilename string) (string, err
 	}
 	defer file.Close()
 
-	_, err = io.Copy(file, resp.Body)
+	size, err := io.Copy(file, resp.Body)
 	if err != nil {
 		return "", err
 	}
-	log.Printf("Successfully downloaded file to: %s", filePath)
+
+	if size < 50*1024 {
+		log.Printf("Downloaded file is too small (%d bytes), likely invalid. Deleting file: %s", size, filePath)
+		os.Remove(filePath)
+		return "", fmt.Errorf("downloaded file too small (%d bytes)", size)
+	}
+
+	log.Printf("Successfully downloaded file to: %s (Size: %d bytes)", filePath, size)
 
 	return filePath, nil
 }
