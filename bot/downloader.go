@@ -181,51 +181,32 @@ func downloadDirectImage(mediaURL string, suggestedFilename string) (string, err
 	ext := ".tmp"
 	if suggestedFilename != "" {
 		ext = filepath.Ext(suggestedFilename)
-		if ext == "" {
-			contentType := resp.Header.Get("Content-Type")
-			if strings.Contains(contentType, "image/png") {
-				ext = ".png"
-			} else if strings.Contains(contentType, "image/gif") {
-				ext = ".gif"
-			} else if strings.Contains(contentType, "video/mp4") {
-				ext = ".mp4"
-			} else if strings.Contains(contentType, "video/webm") {
-				ext = ".webm"
-			} else if strings.Contains(contentType, "video/quicktime") {
-				ext = ".mov"
-			} else if strings.Contains(contentType, "image/jpeg") {
-				ext = ".jpg"
-			} else {
-				parsedURL, parseErr := url.Parse(mediaURL)
-				if parseErr == nil {
-					pathExt := filepath.Ext(parsedURL.Path)
-					if pathExt != "" {
-						ext = pathExt
-					}
-				}
+	}
+
+	if ext == "" || ext == ".tmp" {
+		contentType := resp.Header.Get("Content-Type")
+		contentTypeMap := map[string]string{
+			"image/png":       ".png",
+			"image/gif":       ".gif",
+			"video/mp4":       ".mp4",
+			"video/webm":      ".webm",
+			"video/quicktime": ".mov",
+			"image/jpeg":      ".jpg",
+		}
+		for ct, e := range contentTypeMap {
+			if strings.Contains(contentType, ct) {
+				ext = e
+				break
 			}
 		}
-	} else {
-		contentType := resp.Header.Get("Content-Type")
-		if strings.Contains(contentType, "image/png") {
-			ext = ".png"
-		} else if strings.Contains(contentType, "image/gif") {
-			ext = ".gif"
-		} else if strings.Contains(contentType, "video/mp4") {
-			ext = ".mp4"
-		} else if strings.Contains(contentType, "video/webm") {
-			ext = ".webm"
-		} else if strings.Contains(contentType, "video/quicktime") {
-			ext = ".mov"
-		} else if strings.Contains(contentType, "image/jpeg") {
-			ext = ".jpg"
-		} else {
-			parsedURL, parseErr := url.Parse(mediaURL)
-			if parseErr == nil {
-				pathExt := filepath.Ext(parsedURL.Path)
-				if pathExt != "" {
-					ext = pathExt
-				}
+	}
+
+	if ext == "" || ext == ".tmp" {
+		parsedURL, parseErr := url.Parse(mediaURL)
+		if parseErr == nil {
+			pathExt := filepath.Ext(parsedURL.Path)
+			if pathExt != "" {
+				ext = pathExt
 			}
 		}
 	}
