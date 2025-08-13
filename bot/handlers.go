@@ -15,45 +15,21 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func buildMediaCaption(source, url, fileType string, fileSize int64, duration time.Duration, user string) string {
-	escapedSource := EscapeMarkdownV2(strings.ToLower(source))
-	escapedURL := EscapeMarkdownV2(url)
-	escapedFileType := EscapeMarkdownV2(fileType)
-	escapedSize := EscapeMarkdownV2(FormatFileSize(fileSize))
-	escapedDuration := EscapeMarkdownV2(duration.String())
-	escapedUser := EscapeMarkdownV2(user)
-
-	captionFormat := `✅ *%s Berhasil Diunduh*` + "\n\n" +
-		`🔗 *Sumber:* [%s](%s)` + "\n" +
-		`💾 *Ukuran:* %s` + "\n" +
-		`⏱️ *Durasi Proses:* %s` + "\n" +
-		`👤 *Oleh:* %s`
-
-	return fmt.Sprintf(
-		captionFormat,
-		escapedFileType,
-		escapedSource,
-		escapedURL,
-		escapedSize,
-		escapedDuration,
-		escapedUser,
-	)
-}
-
 func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	switch msg.Command() {
 	case "start", "help":
-		handleHelpCommand(bot, msg)
+		HandleHelpCommand(bot, msg)
 	case "stats":
 		HandleStatusCommand(bot, msg)
+	case "support":
+		HandleSupportCommand(bot, msg)
 	default:
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Command tidak dikenal. Ketik /help untuk melihat daftar perintah."))
 	}
 }
 
 func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	re := regexp.MustCompile(`(https?://[^
-]+)`)
+	re := regexp.MustCompile(`(https?://[^\n]+)`)
 	url := re.FindString(msg.Text)
 
 	if url == "" {
@@ -153,11 +129,44 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 func handleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	helpText := "Selamat datang di Aether Bot! ✨\n\n" +
-		"Cukup kirimkan link dari TikTok atau Instagram, dan saya akan mengunduh kontennya untuk Anda.\n\n" +
+		"Saya adalah bot yang dapat membantu Anda mengunduh media dari berbagai platform sosial media.\n\n" +
+		"Cukup kirimkan link dari platform yang didukung, dan saya akan mengunduh kontennya untuk Anda.\n\n" +
+		"Platform yang didukung:\n" +
+		"- Bilibili\n" +
+		"- Bluesky\n" +
+		"- Dailymotion\n" +
+		"- Facebook\n" +
+		"- Instagram\n" +
+		"- Loom\n" +
+		"- OK\n" +
+		"- Pinterest\n" +
+		"- Newgrounds\n" +
+		"- Reddit\n" +
+		"- Rutube\n" +
+		"- Snapchat\n" +
+		"- Soundcloud\n" +
+		"- Streamable\n" +
+		"- TikTok\n" +
+		"- Tumblr\n" +
+		"- Twitch\n" +
+		"- Twitter\n" +
+		"- Vimeo\n" +
+		"- VK\n" +
+		"- Xiaohongshu\n" +
+		"- YouTube\n\n" +
 		"Perintah yang tersedia:\n" +
 		" • `/help` - Menampilkan pesan ini.\n" +
 		" • `/stats` - Menampilkan status bot."
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, helpText))
+
+	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("Developer", "https://t.me/pavellc"),
+		),
+	)
+
+	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, helpText)
+	msgConfig.ReplyMarkup = inlineKeyboard
+	bot.Send(msgConfig)
 }
 
 func handleDownloadCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {

@@ -159,3 +159,55 @@ func BuildMediaCaption(source, url, fileType string, fileSize int64, duration ti
 		escapedUser,
 	)
 }
+
+func HandleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
+	helpText := "Selamat datang di Aether Bot! ✨\n\n" +
+		"Saya adalah bot yang dapat membantu Anda mengunduh media dari berbagai platform sosial media.\n\n" +
+		"Cukup kirimkan link dari platform yang didukung, dan saya akan mengunduh kontennya untuk Anda.\n\n" +
+		"Bot ini sepenuhnya ditulis dalam bahasa Go.\n\n" +
+		"Gunakan perintah /support untuk melihat daftar platform yang didukung.\n\n" +
+		"Perintah yang tersedia:\n" +
+		" • `/help` - Menampilkan pesan ini.\n" +
+		" • `/stats` - Menampilkan status bot.\n" +
+		" • `/support` - Menampilkan daftar platform yang didukung."
+
+	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("Developer", "https://t.me/Pavellc"),
+			tgbotapi.NewInlineKeyboardButtonURL("Donasi", "https://t.me/pavellc"),
+		),
+	)
+
+	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, helpText)
+	msgConfig.ReplyMarkup = inlineKeyboard
+	bot.Send(msgConfig)
+}
+
+func HandleSupportCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
+	supportText := "Platform yang didukung:\n" +
+		"- Bilibili\n" +
+		"- Bluesky\n" +
+		"- Dailymotion\n" +
+		"- Facebook\n" +
+		"- Instagram\n" +
+		"- Loom\n" +
+		"- OK\n" +
+		"- Pinterest\n" +
+		"- Newgrounds\n" +
+		"- Reddit\n" +
+		"- Rutube\n" +
+		"- Snapchat\n" +
+		"- Soundcloud\n" +
+		"- Streamable\n" +
+		"- TikTok\n" +
+		"- Tumblr\n" +
+		"- Twitch\n" +
+		"- Twitter\n" +
+		"- Vimeo\n" +
+		"- VK\n" +
+		"- Xiaohongshu\n" +
+		"- YouTube"
+
+	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, supportText)
+	bot.Send(msgConfig)
+}
