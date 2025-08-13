@@ -123,6 +123,12 @@ func DownloadMediaWithCobalt(mediaURL string, audioOnly bool) ([]string, error) 
 	}
 	log.Printf("Cobalt API response status: %s", cobaltResponse.Status)
 
+	if cobaltResponse.Status == "tunnel" || cobaltResponse.Status == "redirect" {
+		log.Printf("Cobalt API response URL: %s", cobaltResponse.URL)
+	} else if cobaltResponse.Status == "picker" {
+		log.Printf("Cobalt API response Picker: %+v", cobaltResponse.Picker)
+	}
+
 	var downloadedFilePaths []string
 
 	switch cobaltResponse.Status {
