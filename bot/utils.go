@@ -161,15 +161,15 @@ func BuildMediaCaption(source, url, fileType string, fileSize int64, duration ti
 }
 
 func HandleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	helpText := "Selamat datang di Aether Bot! ✨\n\n" +
-		"Saya adalah bot yang dapat membantu Anda mengunduh media dari berbagai platform sosial media.\n\n" +
-		"Cukup kirimkan link dari platform yang didukung, dan saya akan mengunduh kontennya untuk Anda.\n\n" +
-		"Bot ini sepenuhnya ditulis dalam bahasa Go.\n\n" +
+	helpText := "Selamat datang di Aether Bot ✨\n\n" +
+		"Bot ini Diciptakan Untuk mempermudah Anda dalam mengunduh konten dari berbagai platform sosial media.\n\n" +
+		"Cukup kirimkan tautan dari platform yang didukung, dan Bot akan mengunduh kontennya Untuk Anda .\n\n" +
+		"Fun fact: Bot ini sepenuhnya ditulis dalam bahasa Go 🐹 \n\n" +
 		"Gunakan perintah /support untuk melihat daftar platform yang didukung.\n\n" +
 		"Perintah yang tersedia:\n" +
-		" • `/help` - Menampilkan pesan ini.\n" +
-		" • `/stats` - Menampilkan status bot.\n" +
-		" • `/support` - Menampilkan daftar platform yang didukung."
+		" • `/help` - Menampilkan pesan bantuan\n" +
+		" • `/stats` - Menampilkan status bot\n" +
+		" • `/support` - Menampilkan daftar platform yang dapat diunduh."
 
 	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
