@@ -8,7 +8,7 @@ import (
 )
 
 func StartBot(token string) error {
-	bot, err := tgbotapi.NewBotAPIWithClient(token, "http://localhost:8081/bot%s/%s", &http.Client{})
+	bot, err := tgbotapi.NewBotAPIWithClient(token, "http://localhost:9090/bot%s/%s", &http.Client{})
 	if err != nil {
 		return err
 	}
