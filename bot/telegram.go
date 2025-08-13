@@ -2,12 +2,13 @@ package bot
 
 import (
 	"log"
+	"net/http"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 func StartBot(token string) error {
-	bot, err := tgbotapi.NewBotAPI(token)
+	bot, err := tgbotapi.NewBotAPIWithClient(token, "http://localhost:8081/bot%s/%s", &http.Client{})
 	if err != nil {
 		return err
 	}
