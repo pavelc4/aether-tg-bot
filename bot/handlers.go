@@ -13,70 +13,17 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/host"
-	"github.com/shirou/gopsutil/v3/mem"
-	"github.com/shirou/gopsutil/v3/net"
-	"github.com/shirou/gopsutil/v3/process"
 )
-
-func formatFileSize(size int64) string {
-	const (
-		B  = 1
-		KB = 1024 * B
-		MB = 1024 * KB
-		GB = 1024 * MB
-	)
-	switch {
-	case size >= GB:
-		return fmt.Sprintf("%.2f GB", float64(size)/GB)
-	case size >= MB:
-		return fmt.Sprintf("%.2f MB", float64(size)/MB)
-	case size >= KB:
-		return fmt.Sprintf("%.2f KB", float64(size)/KB)
-	default:
-		return fmt.Sprintf("%d Bytes", size)
-	}
-}
-
-func formatUptime(uptimeSec uint64) string {
-	days := uptimeSec / (60 * 60 * 24)
-	hours := (uptimeSec % (60 * 60 * 24)) / (60 * 60)
-	minutes := (uptimeSec % (60 * 60)) / 60
-	seconds := uptimeSec % 60
-
-	if days > 0 {
-		return fmt.Sprintf("%dd %dh %dm %ds", days, hours, minutes, seconds)
-	}
-	if hours > 0 {
-		return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
-	}
-	if minutes > 0 {
-		return fmt.Sprintf("%dm %ds", minutes, seconds)
-	}
-	return fmt.Sprintf("%ds", seconds)
-}
-
-var markdownV2Replacer = strings.NewReplacer(
-	"_", "\\_", "*", "\\*", "[", "\\[", "]", "\\]", "(", "\\(", ")", "\\)",
-	"~", "\\~", "`", "\\`", ">", "\\>", "#", "\\#", "+", "\\+", "-", "\\-",
-	"=", "\\=", "|", "\\|", "{", "\\{", "}", "\\}", ".", "\\.", "!", "\\!",
-)
-
-func escapeMarkdownV2(s string) string {
-	return markdownV2Replacer.Replace(s)
-}
 
 func buildMediaCaption(source, url, fileType string, fileSize int64, duration time.Duration, user string) string {
-	escapedSource := escapeMarkdownV2(strings.ToLower(source))
-	escapedURL := escapeMarkdownV2(url)
-	escapedFileType := escapeMarkdownV2(fileType)
-	escapedSize := escapeMarkdownV2(formatFileSize(fileSize))
-	escapedDuration := escapeMarkdownV2(duration.String())
-	escapedUser := escapeMarkdownV2(user)
+	escapedSource := EscapeMarkdownV2(strings.ToLower(source))
+	escapedURL := EscapeMarkdownV2(url)
+	escapedFileType := EscapeMarkdownV2(fileType)
+	escapedSize := EscapeMarkdownV2(FormatFileSize(fileSize))
+	escapedDuration := EscapeMarkdownV2(duration.String())
+	escapedUser := EscapeMarkdownV2(user)
 
-	captionFormat := `✅ *%s Berhasil Diunduh\!*` + "\n\n" +
+	captionFormat := `✅ *%s Berhasil Diunduh*` + "\n\n" +
 		`🔗 *Sumber:* [%s](%s)` + "\n" +
 		`💾 *Ukuran:* %s` + "\n" +
 		`⏱️ *Durasi Proses:* %s` + "\n" +
@@ -98,14 +45,15 @@ func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	case "start", "help":
 		handleHelpCommand(bot, msg)
 	case "stats":
-		handleStatusCommand(bot, msg)
+		HandleStatusCommand(bot, msg)
 	default:
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Command tidak dikenal. Ketik /help untuk melihat daftar perintah."))
 	}
 }
 
 func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	re := regexp.MustCompile(`(https?://[^\s]+)`)
+	re := regexp.MustCompile(`(https?://[^
+]+)`)
 	url := re.FindString(msg.Text)
 
 	if url == "" {
@@ -143,7 +91,7 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 	if len(filePaths) > 1 {
 		duration := time.Since(start).Truncate(time.Second)
-		caption := buildMediaCaption(source, finalURL, "Media", totalSize, duration, GetUserName(msg))
+		caption := BuildMediaCaption(source, finalURL, "Media", totalSize, duration, GetUserName(msg))
 
 		mediaGroup := []interface{}{}
 		for i, path := range filePaths {
@@ -255,7 +203,7 @@ func sendDetailedMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, source str
 		}
 	}
 
-	caption := buildMediaCaption(source, url, "Media", totalSize, duration, GetUserName(msg))
+	caption := BuildMediaCaption(source, url, "Media", totalSize, duration, GetUserName(msg))
 
 	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, caption)
 	msgConfig.ParseMode = "MarkdownV2"
@@ -267,7 +215,7 @@ func processAndSendMediaWithMeta(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, fi
 	fileName := filepath.Base(filePath)
 	duration := time.Since(start).Truncate(time.Second)
 
-	caption := buildMediaCaption(source, url, fileType, fileSize, duration, GetUserName(msg))
+	caption := BuildMediaCaption(source, url, fileType, fileSize, duration, GetUserName(msg))
 
 	switch ext {
 	case ".jpg", ".jpeg", ".png":
@@ -336,49 +284,4 @@ func sendAsDocument(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, capti
 		return fmt.Errorf("failed to send file as document: %w", err)
 	}
 	return nil
-}
-
-func handleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	hostInfo, _ := host.Info()
-	cpuCounts, _ := cpu.Counts(true)
-	cpuUsage, _ := cpu.Percent(time.Second, false)
-	ramInfo, _ := mem.VirtualMemory()
-	diskInfo, _ := disk.Usage("/")
-	netIO, _ := net.IOCounters(false)
-
-	var totalTraffic, bytesSent, bytesRecv uint64
-	if len(netIO) > 0 {
-		bytesSent = netIO[0].BytesSent
-		bytesRecv = netIO[0].BytesRecv
-		totalTraffic = bytesSent + bytesRecv
-	}
-
-	proc, _ := process.NewProcess(int32(os.Getpid()))
-	procRAMInfo, _ := proc.MemoryInfo()
-
-	statusText := fmt.Sprintf(
-		"⚙️ *System:*\n"+
-			"├─ CPU: `%.2f%%` `(%d-core)`\n"+
-			"├─ RAM: `%s / %s` `(%.2f%%)`\n"+
-			"├─ Disk: `%s / %s` `(%.2f%%)`\n"+
-			"└─ Uptime: `%s`\n\n"+
-			"🐹 *App:*\n"+
-			"└─ RAM Usage: `%s`\n\n"+
-			"🌐 *Networks:*\n"+
-			"├─ In: `%s`\n"+
-			"├─ Out: `%s`\n"+
-			"└─ Total Traffic: `%s`",
-		cpuUsage[0], cpuCounts,
-		formatFileSize(int64(ramInfo.Used)), formatFileSize(int64(ramInfo.Total)), ramInfo.UsedPercent,
-		formatFileSize(int64(diskInfo.Used)), formatFileSize(int64(diskInfo.Total)), diskInfo.UsedPercent,
-		formatUptime(hostInfo.Uptime),
-		formatFileSize(int64(procRAMInfo.RSS)),
-		formatFileSize(int64(bytesRecv)),
-		formatFileSize(int64(bytesSent)),
-		formatFileSize(int64(totalTraffic)),
-	)
-
-	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, statusText)
-	msgConfig.ParseMode = "MarkdownV2"
-	bot.Send(msgConfig)
 }
