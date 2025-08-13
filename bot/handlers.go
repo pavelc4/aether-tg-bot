@@ -70,12 +70,36 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	}
 
 	source := "Unknown"
-	if strings.Contains(finalURL, "tiktok.com") {
-		source = "TikTok"
-	} else if strings.Contains(finalURL, "instagram.com") {
-		source = "Instagram"
-	} else if strings.Contains(finalURL, "facebook.com") {
-		source = "Facebook"
+	sourceMap := map[string]string{
+		"bilibili.com":    "Bilibili",
+		"bluesky.app":     "Bluesky",
+		"dailymotion.com": "Dailymotion",
+		"facebook.com":    "Facebook",
+		"instagram.com":   "Instagram",
+		"loom.com":        "Loom",
+		"ok.ru":           "OK",
+		"pinterest.com":   "Pinterest",
+		"newgrounds.com":  "Newgrounds",
+		"reddit.com":      "Reddit",
+		"rutube.ru":       "Rutube",
+		"snapchat.com":    "Snapchat",
+		"soundcloud.com":  "Soundcloud",
+		"streamable.com":  "Streamable",
+		"tiktok.com":      "TikTok",
+		"tumblr.com":      "Tumblr",
+		"twitch.tv":       "Twitch",
+		"twitter.com":     "Twitter",
+		"vimeo.com":       "Vimeo",
+		"vk.com":          "VK",
+		"xiaohongshu.com": "Xiaohongshu",
+		"youtube.com":     "YouTube",
+	}
+
+	for domain, name := range sourceMap {
+		if strings.Contains(finalURL, domain) {
+			source = name
+			break
+		}
 	}
 
 	bot.Request(tgbotapi.NewEditMessageText(msg.Chat.ID, processingMsg.MessageID, fmt.Sprintf("⏳ Sumber terdeteksi: %s. Mengunduh konten...", source)))
