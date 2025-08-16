@@ -6,3 +6,5 @@ dump
 
 #TXT File
 *.txt
+#env
+.env

@@ -5,10 +5,17 @@ import (
 	"net/http"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/pavelc4/aether-tg-bot/config"
 )
 
 func StartBot(token string) error {
-	bot, err := tgbotapi.NewBotAPIWithClient(token, "http://localhost:9090/bot%s/%s", &http.Client{})
+	apiURL := config.GetTelegramApiURL()
+
+	if apiURL == "" {
+		apiURL = "http://localhost:8081"
+	}
+
+	bot, err := tgbotapi.NewBotAPIWithClient(token, apiURL+"/bot%s/%s", &http.Client{})
 	if err != nil {
 		return err
 	}
