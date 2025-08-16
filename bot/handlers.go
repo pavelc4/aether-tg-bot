@@ -128,41 +128,45 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 }
 
 func handleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	helpText := "Selamat datang di Aether Bot ✨\n\n" +
-		"Bot ini Diciptakan Untuk mempermudah Anda dalam mengunduh konten dari berbagai platform sosial media.\n\n" +
-		"Cukup kirimkan tautan dari platform yang didukung, dan Bot akan mengunduh kontennya Untuk Anda .\n\n" +
-		"Fun fact: Bot ini sepenuhnya ditulis dalam bahasa Go 🐹\n\n" +
-		"Gunakan perintah /support untuk melihat daftar platform yang didukung.\n\n" +
+	helpText := "Selamat datang di Aether Bot! ✨\n\n" +
+		"Saya adalah bot yang dapat membantu Anda mengunduh media dari berbagai platform sosial media.\n\n" +
+		"Cukup kirimkan link dari platform yang didukung, dan saya akan mengunduh kontennya untuk Anda.\n\n" +
+		"Platform yang didukung:\n" +
+		"- Bilibili\n" +
+		"- Bluesky\n" +
+		"- Dailymotion\n" +
+		"- Facebook\n" +
+		"- Instagram\n" +
+		"- Loom\n" +
+		"- OK\n" +
+		"- Pinterest\n" +
+		"- Newgrounds\n" +
+		"- Reddit\n" +
+		"- Rutube\n" +
+		"- Snapchat\n" +
+		"- Soundcloud\n" +
+		"- Streamable\n" +
+		"- TikTok\n" +
+		"- Tumblr\n" +
+		"- Twitch\n" +
+		"- Twitter\n" +
+		"- Vimeo\n" +
+		"- VK\n" +
+		"- Xiaohongshu\n" +
+		"- YouTube\n\n" +
 		"Perintah yang tersedia:\n" +
-		" • `/help` - Menampilkan pesan bantuan\n" +
-		" • `/stats` - Menampilkan status bot\n" +
-		" • `/support` - Menampilkan daftar platform yang dapat diunduh."
+		" • `/help` - Menampilkan pesan ini.\n" +
+		" • `/stats` - Menampilkan status bot."
 
 	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonURL("Developer", "https://t.me/pavellc"),
-			tgbotapi.NewInlineKeyboardButtonURL("Donasi", "https://t.me/pavellc"),
 		),
 	)
 
 	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, helpText)
 	msgConfig.ReplyMarkup = inlineKeyboard
 	bot.Send(msgConfig)
-}
-
-func HandleSupportCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	platformText := "Platform yang didukung:\n"
-	var platforms []string
-	for _, name := range sourceMap {
-		platforms = append(platforms, "- "+name)
-	}
-	platformText += strings.Join(platforms, "\n")
-
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, platformText))
-}
-
-func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "Fitur statistik sedang dalam pengembangan."))
 }
 
 func handleDownloadCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
