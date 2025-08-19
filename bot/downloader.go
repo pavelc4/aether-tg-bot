@@ -48,7 +48,7 @@ func runYTDLP(url string, audioOnly bool) ([]string, int64, string, error) {
 }
 
 func DownloadMediaWithCobalt(mediaURL string, audioOnly bool) ([]string, error) {
-	log.Printf("Attempting to download media from %s using Cobalt API", mediaURL)
+	log.Printf("Attempting to download media from %s using Cobalt API. mediaURL: %s", mediaURL, mediaURL)
 	cobaltAPIURL := config.GetCobaltAPI()
 
 	requestBody := map[string]interface{}{
@@ -127,6 +127,8 @@ func DownloadMediaWithCobalt(mediaURL string, audioOnly bool) ([]string, error) 
 		log.Printf("Cobalt API response URL: %s", cobaltResponse.URL)
 	} else if cobaltResponse.Status == "picker" {
 		log.Printf("Cobalt API response Picker: %+v", cobaltResponse.Picker)
+	} else if cobaltResponse.Status == "error" {
+		log.Printf("Cobalt API returned error status. Error Code: %s, Context: %+v, Full Response: %+v", cobaltResponse.Error.Code, cobaltResponse.Error.Context, cobaltResponse)
 	}
 
 	var downloadedFilePaths []string
@@ -233,7 +235,7 @@ func downloadFile(mediaURL string, suggestedFilename string) (string, error) {
 		return "", err
 	}
 
-	if size < 1024 {
+	if size < 5120 {
 		log.Printf("Downloaded file is too small (%d bytes), likely invalid. Deleting file: %s", size, filePath)
 		os.Remove(filePath)
 		return "", fmt.Errorf("downloaded file too small (%d bytes)", size)
@@ -242,4 +244,55 @@ func downloadFile(mediaURL string, suggestedFilename string) (string, error) {
 	log.Printf("Successfully downloaded file to: %s (Size: %d bytes)", filePath, size)
 
 	return filePath, nil
+}
+
+func DownloadImage(imageUrl string) (string, int64, error) {
+	log.Printf("Attempting to download image from URL: %s", imageUrl)
+	tmpDir, err := os.MkdirTemp("", "aether-image-")
+	if err != nil {
+		return "", 0, err
+	}
+	log.Printf("Created temporary directory for image: %s", tmpDir)
+
+	resp, err := http.Get(imageUrl)
+	if err != nil {
+		return "", 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", 0, fmt.Errorf("failed to download image: status code %d", resp.StatusCode)
+	}
+
+	ext := ".jpg"
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "image/png") {
+		ext = ".png"
+	} else if strings.Contains(contentType, "image/gif") {
+		ext = ".gif"
+	} else if strings.Contains(contentType, "image/jpeg") {
+		ext = ".jpg"
+	}
+
+	filePath := filepath.Join(tmpDir, fmt.Sprintf("%d%s", time.Now().UnixNano(), ext))
+	file, err := os.Create(filePath)
+	if err != nil {
+		return "", 0, err
+	}
+	defer file.Close()
+
+	size, err := io.Copy(file, resp.Body)
+	if err != nil {
+		return "", 0, err
+	}
+
+	if size < 5120 {
+		log.Printf("Downloaded image is too small (%d bytes), likely invalid. Deleting file: %s", size, filePath)
+		os.Remove(filePath)
+		return "", 0, fmt.Errorf("downloaded image too small (%d bytes)", size)
+	}
+
+	log.Printf("Successfully downloaded image to: %s (Size: %d bytes)", filePath, size)
+
+	return filePath, size, nil
 }

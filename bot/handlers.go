@@ -6,6 +6,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -33,7 +34,8 @@ func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 }
 
 func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	re := regexp.MustCompile(`(https?://[^\n]+)`)
+	re := regexp.MustCompile(`(https?://[^
+]+)`)
 	url := re.FindString(msg.Text)
 
 	if url == "" {
@@ -86,11 +88,48 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 	start := time.Now()
 
-	filePaths, totalSize, _, err := DownloadVideo(url)
+	var filePaths []string
+	var totalSize int64
+	var mediaType string
+
+	resp, err := http.Head(finalURL)
 	if err != nil {
-		errorMsg := fmt.Sprintf("❌ Gagal mengunduh video: %s", err.Error())
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, errorMsg))
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("❌ Gagal memeriksa tipe konten: %s", err.Error())))
 		return
+	}
+	defer resp.Body.Close()
+
+	contentType := resp.Header.Get("Content-Type")
+	log.Printf("Content-Type for %s: %s", finalURL, contentType)
+
+	switch {
+	case strings.HasPrefix(contentType, "image/"):
+		mediaType = "Image"
+		filePath, size, err := DownloadImage(finalURL)
+		if err != nil {
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("❌ Gagal mengunduh gambar: %s", err.Error())))
+			return
+		}
+		filePaths = []string{filePath}
+		totalSize = size
+	case strings.HasPrefix(contentType, "video/"):
+		mediaType = "Video"
+		paths, size, _, err := DownloadVideo(url)
+		if err != nil {
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("❌ Gagal mengunduh video: %s", err.Error())))
+			return
+		}
+		filePaths = paths
+		totalSize = size
+	default: // Default to video download if content type is unknown or not image/video
+		mediaType = "Video"
+		paths, size, _, err := DownloadVideo(url)
+		if err != nil {
+			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("❌ Gagal mengunduh konten: %s", err.Error())))
+			return
+		}
+		filePaths = paths
+		totalSize = size
 	}
 
 	if len(filePaths) > 1 {
@@ -119,7 +158,7 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		}
 	} else if len(filePaths) == 1 {
 		filePath := filePaths[0]
-		err = processAndSendMediaWithMeta(bot, msg, filePath, totalSize, source, start, "Video", finalURL)
+		err = processAndSendMediaWithMeta(bot, msg, filePath, totalSize, source, start, mediaType, finalURL)
 		if err != nil {
 			log.Printf("Error processing and sending media: %v", err)
 			bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mengirim media: "+err.Error()))
