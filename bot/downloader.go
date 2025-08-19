@@ -233,7 +233,7 @@ func downloadFile(mediaURL string, suggestedFilename string) (string, error) {
 		return "", err
 	}
 
-	if size < 50*1024 {
+	if size < 1024 {
 		log.Printf("Downloaded file is too small (%d bytes), likely invalid. Deleting file: %s", size, filePath)
 		os.Remove(filePath)
 		return "", fmt.Errorf("downloaded file too small (%d bytes)", size)
