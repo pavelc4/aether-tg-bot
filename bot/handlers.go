@@ -23,6 +23,8 @@ func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		HandleStatusCommand(bot, msg)
 	case "support":
 		HandleSupportCommand(bot, msg)
+	case "tikaudio":
+		handleTikTokAudioCommand(bot, msg)
 	default:
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Command tidak dikenal. Ketik /help untuk melihat daftar perintah."))
 	}
@@ -317,4 +319,47 @@ func sendAsDocument(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, capti
 		return fmt.Errorf("failed to send file as document: %w", err)
 	}
 	return nil
+}
+func handleTikTokAudioCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
+	// Ambil URL dari argumen command
+	url := strings.TrimSpace(msg.CommandArguments())
+	if url == "" || !strings.Contains(url, "tiktok.com") {
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Harap sertakan URL TikTok setelah perintah.\nContoh: `/tikaudio https://vt.tiktok.com/ZSSoD9va6/`"))
+		return
+	}
+
+	// Kirim pesan "memproses"
+	processingMsg, _ := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Memproses audio TikTok, harap tunggu..."))
+	defer bot.Request(tgbotapi.NewDeleteMessage(msg.Chat.ID, processingMsg.MessageID))
+
+	// Panggil fungsi downloader yang baru kita buat
+	filePath, title, author, err := DownloadTikTokAudio(url)
+	if err != nil {
+		errorMsg := fmt.Sprintf("❌ Gagal mengunduh audio: %s", err.Error())
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, errorMsg))
+		return
+	}
+
+	// Hapus direktori temporary setelah selesai
+	defer DeleteDirectory(filepath.Dir(filePath))
+
+	// Siapkan file audio untuk dikirim
+	audioFile := tgbotapi.FilePath(filePath)
+	audioMsg := tgbotapi.NewAudio(msg.Chat.ID, audioFile)
+
+	// Buat caption dan metadata audio
+	audioMsg.Caption = fmt.Sprintf("✅ *Audio TikTok Berhasil Diunduh*\n\n🔗 *Sumber:* [%s](%s)\n👤 *Oleh:* %s",
+		EscapeMarkdownV2(title),
+		EscapeMarkdownV2(url),
+		EscapeMarkdownV2(GetUserName(msg)),
+	)
+	audioMsg.ParseMode = "MarkdownV2"
+	audioMsg.Title = title
+	audioMsg.Performer = author
+
+	// Kirim audio
+	if _, err := bot.Send(audioMsg); err != nil {
+		log.Printf("Gagal mengirim audio ke Telegram: %v", err)
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Maaf, gagal mengirim file audio."))
+	}
 }
