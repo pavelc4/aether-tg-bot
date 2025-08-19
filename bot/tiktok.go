@@ -17,33 +17,45 @@ type TikWMResponse struct {
 		MusicInfo struct {
 			ID      string `json:"id"`
 			Title   string `json:"title"`
-			PlayURL string `json:"play"`
 			Author  string `json:"author"`
+			Play    string `json:"play"`
+			PlayURL string `json:"play_url"`
 		} `json:"music_info"`
 	} `json:"data"`
 }
 
-func DownloadTikTokAudio(tiktokURL string) (filePath, title, author string, err error) {
-	log.Println("Memulai proses unduh audio TikTok dari:", tiktokURL)
-
+func fetchAudioURL(tiktokURL string) (string, string, string, error) {
 	apiURL := "https://www.tikwm.com/api/"
 	payload := map[string]string{"url": tiktokURL}
 	jsonPayload, _ := json.Marshal(payload)
 
 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		return "", "", "", fmt.Errorf("gagal memanggil API tikwm: %w", err)
+		return "", "", "", fmt.Errorf("gagal call API: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var apiResp TikWMResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return "", "", "", fmt.Errorf("gagal decode JSON dari tikwm: %w", err)
+	var result TikWMResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", "", "", fmt.Errorf("decode JSON gagal: %w", err)
 	}
 
-	musicInfo := apiResp.Data.MusicInfo
-	if musicInfo.PlayURL == "" {
-		return "", "", "", fmt.Errorf("tidak ditemukan URL audio di response API")
+	music := result.Data.MusicInfo
+	audioURL := music.Play
+	if audioURL == "" {
+		audioURL = music.PlayURL
+	}
+	if audioURL == "" {
+		return "", "", "", fmt.Errorf("URL audio tidak ditemukan di response")
+	}
+
+	return audioURL, music.Title, music.Author, nil
+}
+
+func DownloadTikTokAudio(tiktokURL string) (filePath, title, author string, err error) {
+	audioURL, title, author, err := fetchAudioURL(tiktokURL)
+	if err != nil {
+		return "", "", "", err
 	}
 
 	tmpDir, err := os.MkdirTemp("", "aether-tiktok-audio-")
@@ -51,21 +63,19 @@ func DownloadTikTokAudio(tiktokURL string) (filePath, title, author string, err 
 		return "", "", "", fmt.Errorf("gagal membuat direktori sementara: %w", err)
 	}
 
-	audioResp, err := http.Get(musicInfo.PlayURL)
+	resp, err := http.Get(audioURL)
 	if err != nil {
 		DeleteDirectory(tmpDir)
 		return "", "", "", fmt.Errorf("gagal mengunduh audio: %w", err)
 	}
-	defer audioResp.Body.Close()
+	defer resp.Body.Close()
 
-	fileName := musicInfo.ID + ".mp3"
-	if musicInfo.Title != "" {
-		safeTitle := strings.ReplaceAll(musicInfo.Title, " ", "_")
-		safeTitle = strings.ToLower(safeTitle)
-		fileName = safeTitle + ".mp3"
+	safeTitle := "tiktok_audio"
+	if title != "" {
+		safeTitle = strings.ReplaceAll(strings.ToLower(title), " ", "_")
 	}
+	filePath = filepath.Join(tmpDir, safeTitle+".mp3")
 
-	filePath = filepath.Join(tmpDir, fileName)
 	outFile, err := os.Create(filePath)
 	if err != nil {
 		DeleteDirectory(tmpDir)
@@ -73,12 +83,12 @@ func DownloadTikTokAudio(tiktokURL string) (filePath, title, author string, err 
 	}
 	defer outFile.Close()
 
-	_, err = io.Copy(outFile, audioResp.Body)
+	_, err = io.Copy(outFile, resp.Body)
 	if err != nil {
 		DeleteDirectory(tmpDir)
 		return "", "", "", fmt.Errorf("gagal menyimpan file audio: %w", err)
 	}
 
-	log.Printf("Audio TikTok berhasil diunduh ke: %s", filePath)
-	return filePath, musicInfo.Title, musicInfo.Author, nil
+	log.Printf("Audio TikTok berhasil diunduh: %s", filePath)
+	return filePath, title, author, nil
 }

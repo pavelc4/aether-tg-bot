@@ -17,7 +17,9 @@ import (
 
 func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	switch msg.Command() {
-	case "start", "help":
+	case "start":
+		HandleHelpCommand(bot, msg)
+	case "help":
 		HandleHelpCommand(bot, msg)
 	case "stats":
 		HandleStatusCommand(bot, msg)
@@ -127,48 +129,6 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	if len(filePaths) > 0 {
 		DeleteDirectory(filepath.Dir(filePaths[0]))
 	}
-}
-
-func handleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	helpText := "Selamat datang di Aether Bot! ✨\n\n" +
-		"Saya adalah bot yang dapat membantu Anda mengunduh media dari berbagai platform sosial media.\n\n" +
-		"Cukup kirimkan link dari platform yang didukung, dan saya akan mengunduh kontennya untuk Anda.\n\n" +
-		"Platform yang didukung:\n" +
-		"- Bilibili\n" +
-		"- Bluesky\n" +
-		"- Dailymotion\n" +
-		"- Facebook\n" +
-		"- Instagram\n" +
-		"- Loom\n" +
-		"- OK\n" +
-		"- Pinterest\n" +
-		"- Newgrounds\n" +
-		"- Reddit\n" +
-		"- Rutube\n" +
-		"- Snapchat\n" +
-		"- Soundcloud\n" +
-		"- Streamable\n" +
-		"- TikTok\n" +
-		"- Tumblr\n" +
-		"- Twitch\n" +
-		"- Twitter\n" +
-		"- Vimeo\n" +
-		"- VK\n" +
-		"- Xiaohongshu\n" +
-		"- YouTube\n\n" +
-		"Perintah yang tersedia:\n" +
-		" • `/help` - Menampilkan pesan ini.\n" +
-		" • `/stats` - Menampilkan status bot."
-
-	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL("Developer", "https://t.me/pavellc"),
-		),
-	)
-
-	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, helpText)
-	msgConfig.ReplyMarkup = inlineKeyboard
-	bot.Send(msgConfig)
 }
 
 func handleDownloadCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
@@ -321,18 +281,17 @@ func sendAsDocument(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, capti
 	return nil
 }
 func handleTikTokAudioCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	// Ambil URL dari argumen command
 	url := strings.TrimSpace(msg.CommandArguments())
 	if url == "" || !strings.Contains(url, "tiktok.com") {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Harap sertakan URL TikTok setelah perintah.\nContoh: `/tikaudio https://vt.tiktok.com/ZSSoD9va6/`"))
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Harap sertakan URL TikTok setelah perintah.\nContoh: `/tikaudio {URL}`"))
 		return
 	}
 
-	// Kirim pesan "memproses"
 	processingMsg, _ := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Memproses audio TikTok, harap tunggu..."))
 	defer bot.Request(tgbotapi.NewDeleteMessage(msg.Chat.ID, processingMsg.MessageID))
 
-	// Panggil fungsi downloader yang baru kita buat
+	start := time.Now()
+
 	filePath, title, author, err := DownloadTikTokAudio(url)
 	if err != nil {
 		errorMsg := fmt.Sprintf("❌ Gagal mengunduh audio: %s", err.Error())
@@ -340,24 +299,25 @@ func handleTikTokAudioCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		return
 	}
 
-	// Hapus direktori temporary setelah selesai
 	defer DeleteDirectory(filepath.Dir(filePath))
 
-	// Siapkan file audio untuk dikirim
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		log.Printf("Gagal mendapatkan info file: %v", err)
+		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Maaf, gagal mendapatkan informasi file."))
+		return
+	}
+	fileSize := fileInfo.Size()
+	duration := time.Since(start).Truncate(time.Second)
+
 	audioFile := tgbotapi.FilePath(filePath)
 	audioMsg := tgbotapi.NewAudio(msg.Chat.ID, audioFile)
 
-	// Buat caption dan metadata audio
-	audioMsg.Caption = fmt.Sprintf("✅ *Audio TikTok Berhasil Diunduh*\n\n🔗 *Sumber:* [%s](%s)\n👤 *Oleh:* %s",
-		EscapeMarkdownV2(title),
-		EscapeMarkdownV2(url),
-		EscapeMarkdownV2(GetUserName(msg)),
-	)
+	audioMsg.Caption = BuildMediaCaption("TikTok", url, "Audio", fileSize, duration, GetUserName(msg))
 	audioMsg.ParseMode = "MarkdownV2"
 	audioMsg.Title = title
 	audioMsg.Performer = author
 
-	// Kirim audio
 	if _, err := bot.Send(audioMsg); err != nil {
 		log.Printf("Gagal mengirim audio ke Telegram: %v", err)
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Maaf, gagal mengirim file audio."))

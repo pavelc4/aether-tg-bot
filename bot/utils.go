@@ -169,7 +169,8 @@ func HandleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		"Perintah yang tersedia:\n" +
 		" • `/help` - Menampilkan pesan bantuan\n" +
 		" • `/stats` - Menampilkan status bot\n" +
-		" • `/support` - Menampilkan daftar platform yang dapat diunduh."
+		" • `/support` - Menampilkan daftar platform yang dapat diunduh.\n" +
+		" • `/tikaudio` - Mengunduh audio dari tautan TikTok."
 
 	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
