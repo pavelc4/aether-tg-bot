@@ -18,21 +18,19 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+type commandHandlerFunc func(*tgbotapi.BotAPI, *tgbotapi.Message)
+var commandHandlers = map[string]commandHandlerFunc{
+	"start":   HandleHelpCommand,
+	"help":    HandleHelpCommand,
+	"stats":   HandleStatusCommand,
+	"support": HandleSupportCommand,
+	"tikaudio": handleTikTokAudioCommand,
+	"sticker": handleStickerCommand,
+}
 func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	switch msg.Command() {
-	case "start":
-		HandleHelpCommand(bot, msg)
-	case "help":
-		HandleHelpCommand(bot, msg)
-	case "stats":
-		HandleStatusCommand(bot, msg)
-	case "support":
-		HandleSupportCommand(bot, msg)
-	case "tikaudio":
-		handleTikTokAudioCommand(bot, msg)
-	case "sticker":
-		handleStickerCommand(bot, msg)
-	default:
+	if handler, found := commandHandlers[msg.Command()]; found {
+		handler(bot, msg)
+	} else {
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Command tidak dikenal. Ketik /help untuk melihat daftar perintah."))
 	}
 }
@@ -310,87 +308,75 @@ func handleDownloadCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	}
 }
 
-func sendDetailedMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, source string, start time.Time, filePaths []string, url string) {
-	duration := time.Since(start).Truncate(time.Second)
+type mediaSenderFunc func(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, caption string) error
 
-	var totalSize int64
-	for _, path := range filePaths {
-		if fileInfo, err := os.Stat(path); err == nil {
-			totalSize += fileInfo.Size()
-		}
+var mediaSenders map[string]mediaSenderFunc
+
+func init() {
+	mediaSenders = map[string]mediaSenderFunc{
+		".jpg":  sendAsPhoto,
+		".jpeg": sendAsPhoto,
+		".png":  sendAsPhoto,
+		".mp4":  sendAsVideo,
+		".webm": sendAsVideo,
+		".mov":  sendAsVideo,
 	}
-
-	caption := BuildMediaCaption(source, url, "Media", totalSize, duration, GetUserName(msg))
-
-	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, caption)
-	msgConfig.ParseMode = "MarkdownV2"
-	bot.Send(msgConfig)
 }
 
-func processAndSendMediaWithMeta(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath string, fileSize int64, source string, start time.Time, fileType string, url string) error {
-	ext := filepath.Ext(filePath)
-	fileName := filepath.Base(filePath)
-	duration := time.Since(start).Truncate(time.Second)
-
-	caption := BuildMediaCaption(source, url, fileType, fileSize, duration, GetUserName(msg))
-
-	switch ext {
-	case ".jpg", ".jpeg", ".png":
-		imgFile, err := os.Open(filePath)
-		if err != nil {
-			log.Printf("Error opening image file: %v. Sending as document.", err)
-			return sendAsDocument(bot, msg, filePath, caption)
-		}
-		defer imgFile.Close()
-
-		img, _, err := image.Decode(imgFile)
-		if err != nil {
-			log.Printf("Error decoding image: %v. Sending as document.", err)
-			return sendAsDocument(bot, msg, filePath, caption)
-		}
-
-		reencodedFilePath := filepath.Join(filepath.Dir(filePath), "reencoded_"+fileName)
-		reencodedFile, err := os.Create(reencodedFilePath)
-		if err != nil {
-			log.Printf("Error creating re-encoded file: %v. Sending as document.", err)
-			return sendAsDocument(bot, msg, filePath, caption)
-		}
-		defer reencodedFile.Close()
-		defer os.Remove(reencodedFilePath)
-
-		if ext == ".jpg" || ext == ".jpeg" {
-			err = jpeg.Encode(reencodedFile, img, &jpeg.Options{Quality: 90})
-		} else {
-			err = png.Encode(reencodedFile, img)
-		}
-
-		if err != nil {
-			log.Printf("Error re-encoding image: %v. Sending as document.", err)
-			return sendAsDocument(bot, msg, filePath, caption)
-		}
-
-		photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FilePath(reencodedFilePath))
-		photo.Caption = caption
-		photo.ParseMode = "MarkdownV2"
-		if _, err := bot.Send(photo); err != nil {
-			log.Printf("Error sending re-encoded photo: %v. Falling back to document.", err)
-			return sendAsDocument(bot, msg, reencodedFilePath, caption)
-		}
-		return nil
-
-	case ".mp4", ".webm", ".mov":
-		video := tgbotapi.NewVideo(msg.Chat.ID, tgbotapi.FilePath(filePath))
-		video.Caption = caption
-		video.ParseMode = "MarkdownV2"
-		if _, err := bot.Send(video); err != nil {
-			log.Printf("Error sending video: %v. Falling back to document.", err)
-			return sendAsDocument(bot, msg, filePath, caption)
-		}
-		return nil
-
-	default:
+func sendAsPhoto(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, caption string) error {
+	imgFile, err := os.Open(filePath)
+	if err != nil {
+		log.Printf("Error opening image file: %v. Sending as document.", err)
 		return sendAsDocument(bot, msg, filePath, caption)
 	}
+	defer imgFile.Close()
+
+	img, _, err := image.Decode(imgFile)
+	if err != nil {
+		log.Printf("Error decoding image: %v. Sending as document.", err)
+		return sendAsDocument(bot, msg, filePath, caption)
+	}
+
+	reencodedFilePath := filepath.Join(filepath.Dir(filePath), "reencoded_"+filepath.Base(filePath))
+	reencodedFile, err := os.Create(reencodedFilePath)
+	if err != nil {
+		log.Printf("Error creating re-encoded file: %v. Sending as document.", err)
+		return sendAsDocument(bot, msg, filePath, caption)
+	}
+	defer reencodedFile.Close()
+	defer os.Remove(reencodedFilePath)
+
+	ext := filepath.Ext(filePath)
+	if ext == ".jpg" || ext == ".jpeg" {
+		err = jpeg.Encode(reencodedFile, img, &jpeg.Options{Quality: 90})
+	} else {
+		err = png.Encode(reencodedFile, img)
+	}
+
+	if err != nil {
+		log.Printf("Error re-encoding image: %v. Sending as document.", err)
+		return sendAsDocument(bot, msg, filePath, caption)
+	}
+
+	photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FilePath(reencodedFilePath))
+	photo.Caption = caption
+	photo.ParseMode = "MarkdownV2"
+	if _, err := bot.Send(photo); err != nil {
+		log.Printf("Error sending re-encoded photo: %v. Falling back to document.", err)
+		return sendAsDocument(bot, msg, reencodedFilePath, caption)
+	}
+	return nil
+}
+
+func sendAsVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, caption string) error {
+	video := tgbotapi.NewVideo(msg.Chat.ID, tgbotapi.FilePath(filePath))
+	video.Caption = caption
+	video.ParseMode = "MarkdownV2"
+	if _, err := bot.Send(video); err != nil {
+		log.Printf("Error sending video: %v. Falling back to document.", err)
+		return sendAsDocument(bot, msg, filePath, caption)
+	}
+	return nil
 }
 
 func sendAsDocument(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, caption string) error {
@@ -402,6 +388,24 @@ func sendAsDocument(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, capti
 	}
 	return nil
 }
+
+func processAndSendMediaWithMeta(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath string, fileSize int64, source string, start time.Time, fileType string, url string) error {
+	ext := filepath.Ext(filePath)
+	duration := time.Since(start).Truncate(time.Second)
+	caption := BuildMediaCaption(source, url, fileType, fileSize, duration, GetUserName(msg))
+	if sender, ok := mediaSenders[ext]; ok {
+		return sender(bot, msg, filePath, caption)
+	}
+	return sendAsDocument(bot, msg, filePath, caption)
+}
+
+var commandsHandlers = map[string]func(*tgbotapi.BotAPI, *tgbotapi.Message){
+	"mp":       handleDownloadCommand,
+	"mvideo":   handleDownloadCommand,
+	"tikaudio": handleTikTokAudioCommand,
+	"sticker":  handleStickerCommand,
+}
+
 func handleTikTokAudioCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	url := strings.TrimSpace(msg.CommandArguments())
 	if url == "" || !strings.Contains(url, "tiktok.com") {
