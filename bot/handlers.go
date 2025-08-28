@@ -1,12 +1,10 @@
 package bot
 
 import (
-	"encoding/json"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -25,7 +23,6 @@ var commandHandlers = map[string]commandHandlerFunc{
 	"stats":   HandleStatusCommand,
 	"support": HandleSupportCommand,
 	"tikaudio": handleTikTokAudioCommand,
-	"sticker": handleStickerCommand,
 }
 func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	if handler, found := commandHandlers[msg.Command()]; found {
@@ -33,85 +30,6 @@ func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	} else {
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Command tidak dikenal. Ketik /help untuk melihat daftar perintah."))
 	}
-}
-
-func handleStickerCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	args := strings.TrimSpace(msg.CommandArguments())
-	if args == "" {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Harap sertakan URL stiker.\nContoh: `/sticker https://t.me/addstickers/StickerPackName`"))
-		return
-	}
-
-	processingMsg, _ := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Memproses stiker, harap tunggu..."))
-	defer bot.Request(tgbotapi.NewDeleteMessage(msg.Chat.ID, processingMsg.MessageID))
-
-	re := regexp.MustCompile(`https://t.me/addstickers/(\w+)`)
-	matches := re.FindStringSubmatch(args)
-	if len(matches) < 2 {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ URL stiker tidak valid."))
-		return
-	}
-	packName := matches[1]
-
-	resp, err := bot.Request(tgbotapi.GetStickerSetConfig{Name: packName})
-	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mendapatkan set stiker."))
-		return
-	}
-
-	var stickerSet tgbotapi.StickerSet
-	if err := json.Unmarshal(resp.Result, &stickerSet); err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal parsing respon stiker."))
-		return
-	}
-
-	tmpDir, err := os.MkdirTemp("", "stickers-")
-	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal membuat direktori sementara."))
-		return
-	}
-	defer os.RemoveAll(tmpDir)
-
-	for i, sticker := range stickerSet.Stickers {
-		file, err := bot.GetFile(tgbotapi.FileConfig{FileID: sticker.FileID})
-		if err != nil {
-			log.Printf("Gagal mendapatkan file untuk stiker %s: %v", sticker.FileID, err)
-			continue
-		}
-
-		ext := filepath.Ext(file.FilePath)
-		fileName := fmt.Sprintf("sticker_%d%s", i, ext)
-		filePath := filepath.Join(tmpDir, fileName)
-
-		url := file.Link(bot.Token)
-		stickerResp, err := http.Get(url)
-		if err != nil {
-			log.Printf("Gagal mengunduh stiker %s: %v", url, err)
-			continue
-		}
-
-		out, err := os.Create(filePath)
-		if err != nil {
-			log.Printf("Gagal membuat file untuk stiker %s: %v", filePath, err)
-			stickerResp.Body.Close()
-			continue
-		}
-
-		_, err = io.Copy(out, stickerResp.Body)
-		stickerResp.Body.Close()
-		out.Close()
-	}
-
-	zipPath := filepath.Join(os.TempDir(), packName+".zip")
-	if err := ZipDir(tmpDir, zipPath); err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal membuat file zip."))
-		return
-	}
-	defer os.Remove(zipPath)
-
-	doc := tgbotapi.NewDocument(msg.Chat.ID, tgbotapi.FilePath(zipPath))
-	doc.Caption = fmt.Sprintf("Sticker pack: %s", packName)
-	bot.Send(doc)
 }
 
 func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
