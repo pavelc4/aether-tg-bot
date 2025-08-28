@@ -321,7 +321,6 @@ var commandsHandlers = map[string]func(*tgbotapi.BotAPI, *tgbotapi.Message){
 	"mp":       handleDownloadCommand,
 	"mvideo":   handleDownloadCommand,
 	"tikaudio": handleTikTokAudioCommand,
-	"sticker":  handleStickerCommand,
 }
 
 func handleTikTokAudioCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
