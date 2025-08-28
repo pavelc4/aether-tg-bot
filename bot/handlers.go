@@ -1,12 +1,10 @@
 package bot
 
 import (
-	"encoding/json"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -18,102 +16,20 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+type commandHandlerFunc func(*tgbotapi.BotAPI, *tgbotapi.Message)
+var commandHandlers = map[string]commandHandlerFunc{
+	"start":   HandleHelpCommand,
+	"help":    HandleHelpCommand,
+	"stats":   HandleStatusCommand,
+	"support": HandleSupportCommand,
+	"tikaudio": handleTikTokAudioCommand,
+}
 func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	switch msg.Command() {
-	case "start":
-		HandleHelpCommand(bot, msg)
-	case "help":
-		HandleHelpCommand(bot, msg)
-	case "stats":
-		HandleStatusCommand(bot, msg)
-	case "support":
-		HandleSupportCommand(bot, msg)
-	case "tikaudio":
-		handleTikTokAudioCommand(bot, msg)
-	case "sticker":
-		handleStickerCommand(bot, msg)
-	default:
+	if handler, found := commandHandlers[msg.Command()]; found {
+		handler(bot, msg)
+	} else {
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Command tidak dikenal. Ketik /help untuk melihat daftar perintah."))
 	}
-}
-
-func handleStickerCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	args := strings.TrimSpace(msg.CommandArguments())
-	if args == "" {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Harap sertakan URL stiker.\nContoh: `/sticker https://t.me/addstickers/StickerPackName`"))
-		return
-	}
-
-	processingMsg, _ := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Memproses stiker, harap tunggu..."))
-	defer bot.Request(tgbotapi.NewDeleteMessage(msg.Chat.ID, processingMsg.MessageID))
-
-	re := regexp.MustCompile(`https://t.me/addstickers/(\w+)`)
-	matches := re.FindStringSubmatch(args)
-	if len(matches) < 2 {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ URL stiker tidak valid."))
-		return
-	}
-	packName := matches[1]
-
-	resp, err := bot.Request(tgbotapi.GetStickerSetConfig{Name: packName})
-	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal mendapatkan set stiker."))
-		return
-	}
-
-	var stickerSet tgbotapi.StickerSet
-	if err := json.Unmarshal(resp.Result, &stickerSet); err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal parsing respon stiker."))
-		return
-	}
-
-	tmpDir, err := os.MkdirTemp("", "stickers-")
-	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal membuat direktori sementara."))
-		return
-	}
-	defer os.RemoveAll(tmpDir)
-
-	for i, sticker := range stickerSet.Stickers {
-		file, err := bot.GetFile(tgbotapi.FileConfig{FileID: sticker.FileID})
-		if err != nil {
-			log.Printf("Gagal mendapatkan file untuk stiker %s: %v", sticker.FileID, err)
-			continue
-		}
-
-		ext := filepath.Ext(file.FilePath)
-		fileName := fmt.Sprintf("sticker_%d%s", i, ext)
-		filePath := filepath.Join(tmpDir, fileName)
-
-		url := file.Link(bot.Token)
-		stickerResp, err := http.Get(url)
-		if err != nil {
-			log.Printf("Gagal mengunduh stiker %s: %v", url, err)
-			continue
-		}
-
-		out, err := os.Create(filePath)
-		if err != nil {
-			log.Printf("Gagal membuat file untuk stiker %s: %v", filePath, err)
-			stickerResp.Body.Close()
-			continue
-		}
-
-		_, err = io.Copy(out, stickerResp.Body)
-		stickerResp.Body.Close()
-		out.Close()
-	}
-
-	zipPath := filepath.Join(os.TempDir(), packName+".zip")
-	if err := ZipDir(tmpDir, zipPath); err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Gagal membuat file zip."))
-		return
-	}
-	defer os.Remove(zipPath)
-
-	doc := tgbotapi.NewDocument(msg.Chat.ID, tgbotapi.FilePath(zipPath))
-	doc.Caption = fmt.Sprintf("Sticker pack: %s", packName)
-	bot.Send(doc)
 }
 
 func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
@@ -310,87 +226,75 @@ func handleDownloadCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	}
 }
 
-func sendDetailedMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, source string, start time.Time, filePaths []string, url string) {
-	duration := time.Since(start).Truncate(time.Second)
+type mediaSenderFunc func(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, caption string) error
 
-	var totalSize int64
-	for _, path := range filePaths {
-		if fileInfo, err := os.Stat(path); err == nil {
-			totalSize += fileInfo.Size()
-		}
+var mediaSenders map[string]mediaSenderFunc
+
+func init() {
+	mediaSenders = map[string]mediaSenderFunc{
+		".jpg":  sendAsPhoto,
+		".jpeg": sendAsPhoto,
+		".png":  sendAsPhoto,
+		".mp4":  sendAsVideo,
+		".webm": sendAsVideo,
+		".mov":  sendAsVideo,
 	}
-
-	caption := BuildMediaCaption(source, url, "Media", totalSize, duration, GetUserName(msg))
-
-	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, caption)
-	msgConfig.ParseMode = "MarkdownV2"
-	bot.Send(msgConfig)
 }
 
-func processAndSendMediaWithMeta(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath string, fileSize int64, source string, start time.Time, fileType string, url string) error {
-	ext := filepath.Ext(filePath)
-	fileName := filepath.Base(filePath)
-	duration := time.Since(start).Truncate(time.Second)
-
-	caption := BuildMediaCaption(source, url, fileType, fileSize, duration, GetUserName(msg))
-
-	switch ext {
-	case ".jpg", ".jpeg", ".png":
-		imgFile, err := os.Open(filePath)
-		if err != nil {
-			log.Printf("Error opening image file: %v. Sending as document.", err)
-			return sendAsDocument(bot, msg, filePath, caption)
-		}
-		defer imgFile.Close()
-
-		img, _, err := image.Decode(imgFile)
-		if err != nil {
-			log.Printf("Error decoding image: %v. Sending as document.", err)
-			return sendAsDocument(bot, msg, filePath, caption)
-		}
-
-		reencodedFilePath := filepath.Join(filepath.Dir(filePath), "reencoded_"+fileName)
-		reencodedFile, err := os.Create(reencodedFilePath)
-		if err != nil {
-			log.Printf("Error creating re-encoded file: %v. Sending as document.", err)
-			return sendAsDocument(bot, msg, filePath, caption)
-		}
-		defer reencodedFile.Close()
-		defer os.Remove(reencodedFilePath)
-
-		if ext == ".jpg" || ext == ".jpeg" {
-			err = jpeg.Encode(reencodedFile, img, &jpeg.Options{Quality: 90})
-		} else {
-			err = png.Encode(reencodedFile, img)
-		}
-
-		if err != nil {
-			log.Printf("Error re-encoding image: %v. Sending as document.", err)
-			return sendAsDocument(bot, msg, filePath, caption)
-		}
-
-		photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FilePath(reencodedFilePath))
-		photo.Caption = caption
-		photo.ParseMode = "MarkdownV2"
-		if _, err := bot.Send(photo); err != nil {
-			log.Printf("Error sending re-encoded photo: %v. Falling back to document.", err)
-			return sendAsDocument(bot, msg, reencodedFilePath, caption)
-		}
-		return nil
-
-	case ".mp4", ".webm", ".mov":
-		video := tgbotapi.NewVideo(msg.Chat.ID, tgbotapi.FilePath(filePath))
-		video.Caption = caption
-		video.ParseMode = "MarkdownV2"
-		if _, err := bot.Send(video); err != nil {
-			log.Printf("Error sending video: %v. Falling back to document.", err)
-			return sendAsDocument(bot, msg, filePath, caption)
-		}
-		return nil
-
-	default:
+func sendAsPhoto(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, caption string) error {
+	imgFile, err := os.Open(filePath)
+	if err != nil {
+		log.Printf("Error opening image file: %v. Sending as document.", err)
 		return sendAsDocument(bot, msg, filePath, caption)
 	}
+	defer imgFile.Close()
+
+	img, _, err := image.Decode(imgFile)
+	if err != nil {
+		log.Printf("Error decoding image: %v. Sending as document.", err)
+		return sendAsDocument(bot, msg, filePath, caption)
+	}
+
+	reencodedFilePath := filepath.Join(filepath.Dir(filePath), "reencoded_"+filepath.Base(filePath))
+	reencodedFile, err := os.Create(reencodedFilePath)
+	if err != nil {
+		log.Printf("Error creating re-encoded file: %v. Sending as document.", err)
+		return sendAsDocument(bot, msg, filePath, caption)
+	}
+	defer reencodedFile.Close()
+	defer os.Remove(reencodedFilePath)
+
+	ext := filepath.Ext(filePath)
+	if ext == ".jpg" || ext == ".jpeg" {
+		err = jpeg.Encode(reencodedFile, img, &jpeg.Options{Quality: 90})
+	} else {
+		err = png.Encode(reencodedFile, img)
+	}
+
+	if err != nil {
+		log.Printf("Error re-encoding image: %v. Sending as document.", err)
+		return sendAsDocument(bot, msg, filePath, caption)
+	}
+
+	photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FilePath(reencodedFilePath))
+	photo.Caption = caption
+	photo.ParseMode = "MarkdownV2"
+	if _, err := bot.Send(photo); err != nil {
+		log.Printf("Error sending re-encoded photo: %v. Falling back to document.", err)
+		return sendAsDocument(bot, msg, reencodedFilePath, caption)
+	}
+	return nil
+}
+
+func sendAsVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, caption string) error {
+	video := tgbotapi.NewVideo(msg.Chat.ID, tgbotapi.FilePath(filePath))
+	video.Caption = caption
+	video.ParseMode = "MarkdownV2"
+	if _, err := bot.Send(video); err != nil {
+		log.Printf("Error sending video: %v. Falling back to document.", err)
+		return sendAsDocument(bot, msg, filePath, caption)
+	}
+	return nil
 }
 
 func sendAsDocument(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, caption string) error {
@@ -402,6 +306,23 @@ func sendAsDocument(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath, capti
 	}
 	return nil
 }
+
+func processAndSendMediaWithMeta(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, filePath string, fileSize int64, source string, start time.Time, fileType string, url string) error {
+	ext := filepath.Ext(filePath)
+	duration := time.Since(start).Truncate(time.Second)
+	caption := BuildMediaCaption(source, url, fileType, fileSize, duration, GetUserName(msg))
+	if sender, ok := mediaSenders[ext]; ok {
+		return sender(bot, msg, filePath, caption)
+	}
+	return sendAsDocument(bot, msg, filePath, caption)
+}
+
+var commandsHandlers = map[string]func(*tgbotapi.BotAPI, *tgbotapi.Message){
+	"mp":       handleDownloadCommand,
+	"mvideo":   handleDownloadCommand,
+	"tikaudio": handleTikTokAudioCommand,
+}
+
 func handleTikTokAudioCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	url := strings.TrimSpace(msg.CommandArguments())
 	if url == "" || !strings.Contains(url, "tiktok.com") {
