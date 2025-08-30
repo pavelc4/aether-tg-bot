@@ -31,11 +31,13 @@ func StartBot(token string) error {
 		if update.Message == nil {
 			continue
 		}
-		if update.Message.IsCommand() {
-			handleCommand(bot, update.Message)
-		} else {
-			handleMessage(bot, update.Message)
-		}
+		go func(update tgbotapi.Update) {
+			if update.Message.IsCommand() {
+				handleCommand(bot, update.Message)
+			} else {
+				handleMessage(bot, update.Message)
+			}
+		}(update)
 	}
 	return nil
 }
