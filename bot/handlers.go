@@ -69,7 +69,7 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		"tiktok.com":      "TikTok",
 		"tumblr.com":      "Tumblr",
 		"twitch.tv":       "Twitch",
-		"twitter.com":     "Twitter",
+		"x.com":            "X",
 		"vimeo.com":       "Vimeo",
 		"vk.com":          "VK",
 		"xiaohongshu.com": "Xiaohongshu",
