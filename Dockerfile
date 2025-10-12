@@ -29,7 +29,8 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 # Install ONLY the absolute necessary runtime dependencies.
 # --no-cache ensures no extra cache data is stored in the layer, saving space.
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates python3 py3-pip ffmpeg && \
+    pip install --no-cache-dir -U yt-dlp --break-system-packages
 
 # Set working directory
 WORKDIR /app

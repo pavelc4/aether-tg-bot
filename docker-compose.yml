@@ -24,7 +24,7 @@ services:
     volumes:
       - telegram-data:/var/lib/telegram-bot-api
   cobalt:
-    image: ghcr.io/imputnet/cobalt:11.4.1-ea3dc7e
+    image: ghcr.io/imputnet/cobalt:latest
     container_name: cobalt
     restart: unless-stopped
     ports:
