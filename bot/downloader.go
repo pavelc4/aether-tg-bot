@@ -252,14 +252,14 @@ func downloadFile(mediaURL string, suggestedFilename string) (string, error) {
 	if ext == "" || ext == ".tmp" {
 		contentType := resp.Header.Get("Content-Type")
 		contentTypeMap := map[string]string{
-			"image/png":  ".png",
-			"image/gif":  ".gif",
-			"image/jpeg": ".jpg",
-			"video/mp4":  ".mp4",
-			"video/webm": ".webm",
-			"video/quicktime": ".mov",
+			"image/png":        ".png",
+			"image/gif":        ".gif",
+			"image/jpeg":       ".jpg",
+			"video/mp4":        ".mp4",
+			"video/webm":       ".webm",
+			"video/quicktime":  ".mov",
 			"video/x-matroska": ".mkv",
-			"audio/mpeg": ".mp3",
+			"audio/mpeg":       ".mp3",
 		}
 		for ct, e := range contentTypeMap {
 			if strings.Contains(contentType, ct) {
