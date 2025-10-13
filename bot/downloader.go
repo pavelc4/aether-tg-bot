@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -25,14 +26,25 @@ func DownloadAudio(url string) ([]string, int64, string, error) {
 }
 
 func runYTDLP(url string, audioOnly bool) ([]string, int64, string, error) {
-
 	filePaths, err := DownloadMediaWithCobalt(url, audioOnly)
+	provider := "Cobalt"
+
 	if err != nil {
-		return nil, 0, "", fmt.Errorf("failed to download with Cobalt: %w", err)
+		log.Printf("Cobalt download failed: %v", err)
+		if !strings.Contains(url, "youtube.com") && !strings.Contains(url, "youtu.be") {
+			return nil, 0, "", fmt.Errorf("failed to download with Cobalt: %w", err)
+		}
+
+		log.Printf("YouTube link detected. Falling back to yt-dlp.")
+		filePaths, err = DownloadMediaWithYTDLP(url, audioOnly)
+		if err != nil {
+			return nil, 0, "", fmt.Errorf("failed to download with Cobalt and yt-dlp: %w", err)
+		}
+		provider = "yt-dlp"
 	}
 
 	if len(filePaths) == 0 {
-		return nil, 0, "", fmt.Errorf("Cobalt download returned no files")
+		return nil, 0, "", fmt.Errorf("download returned no files")
 	}
 
 	var totalSize int64
@@ -42,10 +54,45 @@ func runYTDLP(url string, audioOnly bool) ([]string, int64, string, error) {
 		}
 	}
 
-	provider := "Cobalt"
-
 	return filePaths, totalSize, provider, nil
 }
+
+func DownloadMediaWithYTDLP(mediaURL string, audioOnly bool) ([]string, error) {
+	log.Printf("Attempting to download media from %s using yt-dlp.", mediaURL)
+
+	tmpDir, err := os.MkdirTemp("", "aether-ytdlp-")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+
+	format := "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+	if audioOnly {
+		format = "bestaudio/best"
+	}
+
+	cmd := exec.Command("yt-dlp", "-f", format, "-o", filepath.Join(tmpDir, "% (title)s.%(ext)s"), mediaURL)
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+	if err != nil {
+		return nil, fmt.Errorf("yt-dlp execution failed: %w\n%s", err, stderr.String())
+	}
+
+	files, err := filepath.Glob(filepath.Join(tmpDir, "*"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list downloaded files: %w", err)
+	}
+
+	if len(files) == 0 {
+		return nil, fmt.Errorf("yt-dlp downloaded no files")
+	}
+
+	return files, nil
+}
+
 
 func DownloadMediaWithCobalt(mediaURL string, audioOnly bool) ([]string, error) {
 	log.Printf("Attempting to download media from %s using Cobalt API. mediaURL: %s", mediaURL, mediaURL)
@@ -180,7 +227,14 @@ func downloadFile(mediaURL string, suggestedFilename string) (string, error) {
 	}
 	log.Printf("Created temporary directory: %s", tmpDir)
 
-	resp, err := http.Get(mediaURL)
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", mediaURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -198,12 +252,14 @@ func downloadFile(mediaURL string, suggestedFilename string) (string, error) {
 	if ext == "" || ext == ".tmp" {
 		contentType := resp.Header.Get("Content-Type")
 		contentTypeMap := map[string]string{
-			"image/png":       ".png",
-			"image/gif":       ".gif",
-			"video/mp4":       ".mp4",
-			"video/webm":      ".webm",
-			"video/quicktime": ".mov",
-			"image/jpeg":      ".jpg",
+			"image/png":        ".png",
+			"image/gif":        ".gif",
+			"image/jpeg":       ".jpg",
+			"video/mp4":        ".mp4",
+			"video/webm":       ".webm",
+			"video/quicktime":  ".mov",
+			"video/x-matroska": ".mkv",
+			"audio/mpeg":       ".mp3",
 		}
 		for ct, e := range contentTypeMap {
 			if strings.Contains(contentType, ct) {

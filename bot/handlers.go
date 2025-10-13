@@ -17,13 +17,15 @@ import (
 )
 
 type commandHandlerFunc func(*tgbotapi.BotAPI, *tgbotapi.Message)
+
 var commandHandlers = map[string]commandHandlerFunc{
-	"start":   HandleHelpCommand,
-	"help":    HandleHelpCommand,
-	"stats":   HandleStatusCommand,
-	"support": HandleSupportCommand,
+	"start":    HandleHelpCommand,
+	"help":     HandleHelpCommand,
+	"stats":    HandleStatusCommand,
+	"support":  HandleSupportCommand,
 	"tikaudio": handleTikTokAudioCommand,
 }
+
 func handleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	if handler, found := commandHandlers[msg.Command()]; found {
 		handler(bot, msg)
@@ -69,7 +71,7 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		"tiktok.com":      "TikTok",
 		"tumblr.com":      "Tumblr",
 		"twitch.tv":       "Twitch",
-		"x.com":            "X",
+		"x.com":           "X",
 		"vimeo.com":       "Vimeo",
 		"vk.com":          "VK",
 		"xiaohongshu.com": "Xiaohongshu",
@@ -315,12 +317,6 @@ func processAndSendMediaWithMeta(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, fi
 		return sender(bot, msg, filePath, caption)
 	}
 	return sendAsDocument(bot, msg, filePath, caption)
-}
-
-var commandsHandlers = map[string]func(*tgbotapi.BotAPI, *tgbotapi.Message){
-	"mp":       handleDownloadCommand,
-	"mvideo":   handleDownloadCommand,
-	"tikaudio": handleTikTokAudioCommand,
 }
 
 func handleTikTokAudioCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {

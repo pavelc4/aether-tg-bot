@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 )
 
 func GetBotToken() string {
@@ -15,6 +16,25 @@ func GetCobaltAPI() string {
 	}
 	return cobaltAPI
 }
+
+func GetYtdlpAPI() string {
+	ytdlpAPI := os.Getenv("YTDLP_API")
+	if ytdlpAPI == "" {
+		ytdlpAPI = "http://yt-dlp-api:8080"
+	}
+	return ytdlpAPI
+}
 func GetTelegramApiURL() string {
 	return os.Getenv("TELEGRAM_API_URL")
+}
+func GetOwnerID() int64 {
+	owner := os.Getenv("OWNER_ID")
+	if owner == "" {
+		return 0
+	}
+	id, err := strconv.ParseInt(owner, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
 }
