@@ -9,6 +9,7 @@ services:
     environment:
       - GOGC=50
       - BOT_TOKEN=${BOT_TOKEN}
+      - OWNER_ID=${OWNER_ID}
       - COBALT_API=http://cobalt:9000
       - TELEGRAM_API_URL=http://telegram-bot-api:8081
 
