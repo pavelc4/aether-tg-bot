@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -125,6 +126,55 @@ func EscapeMarkdownV2(s string) string {
 	return markdownV2Replacer.Replace(s)
 }
 
+// SpeedTestResult holds the results of download/upload speed tests
+type SpeedTestResult struct {
+	DownloadSpeed float64 // MB/s
+	UploadSpeed   float64 // MB/s
+	Latency       time.Duration
+	Error         error
+}
+
+// RunSpeedTest performs a simple network speed test
+func RunSpeedTest() SpeedTestResult {
+	result := SpeedTestResult{}
+
+	// Test latency (ping)
+	latencyStart := time.Now()
+	resp, err := http.Head("https://www.google.com")
+	if err == nil {
+		result.Latency = time.Since(latencyStart)
+		resp.Body.Close()
+	}
+
+	// Test download speed (10MB file from fast.com CDN or similar)
+	downloadURL := "https://speed.cloudflare.com/__down?bytes=10000000" // 10MB
+	downloadStart := time.Now()
+
+	resp, err = http.Get(downloadURL)
+	if err != nil {
+		result.Error = fmt.Errorf("download test failed: %w", err)
+		return result
+	}
+	defer resp.Body.Close()
+
+	downloaded, err := io.Copy(io.Discard, resp.Body)
+	if err != nil {
+		result.Error = fmt.Errorf("download read failed: %w", err)
+		return result
+	}
+
+	downloadDuration := time.Since(downloadStart).Seconds()
+	if downloadDuration > 0 {
+		result.DownloadSpeed = float64(downloaded) / downloadDuration / 1024 / 1024 // Convert to MB/s
+	}
+
+	// Note: Upload test is more complex and requires a server that accepts uploads
+	// For now, we'll skip upload test or use a simple HEAD request as estimation
+	result.UploadSpeed = 0 // Can be implemented later if needed
+
+	return result
+}
+
 func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	// Check if user is owner
 	if !IsOwner(msg.From.ID) {
@@ -154,6 +204,7 @@ func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	}
 
 	cpuCounts, _ := cpu.Counts(true)
+	cpuCountsPhysical, _ := cpu.Counts(false)
 	cpuUsage, err := cpu.Percent(time.Second, false)
 	if err != nil || len(cpuUsage) == 0 {
 		cpuUsage = []float64{0.0}
@@ -196,6 +247,22 @@ func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	// Bot uptime
 	botUptime := time.Since(botStartTime)
 
+	// Run speedtest
+	bot.Request(tgbotapi.NewEditMessageText(msg.Chat.ID, sentMsg.MessageID, "⏳ Menjalankan speedtest..."))
+	speedTest := RunSpeedTest()
+
+	speedTestInfo := "N/A"
+	if speedTest.Error == nil {
+		speedTestInfo = fmt.Sprintf(
+			"├─ Download: `%.2f MB/s`\n"+
+				"└─ Latency: `%dms`",
+			speedTest.DownloadSpeed,
+			speedTest.Latency.Milliseconds(),
+		)
+	} else {
+		speedTestInfo = fmt.Sprintf("└─ Error: `%s`", speedTest.Error.Error())
+	}
+
 	// Build status text
 	statusText := fmt.Sprintf(
 		"🖥️ *System Information*\n"+
@@ -204,7 +271,7 @@ func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 			"└─ Uptime: `%s`\n\n"+
 
 			"⚙️ *CPU*\n"+
-			"├─ Cores: `%d`\n"+
+			"├─ Cores: `%d`,`%d` Thread\n"+
 			"└─ Usage: `%.2f%%`\n\n"+
 
 			"💾 *Memory*\n"+
@@ -218,6 +285,9 @@ func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 			"🌐 *Network*\n"+
 			"├─ Sent: `%s`\n"+
 			"└─ Received: `%s`\n\n"+
+
+			"🚀 *Speed Test*\n"+
+			"%s\n\n"+
 
 			"🐹 *Bot Process*\n"+
 			"├─ Uptime: `%s`\n"+
@@ -237,6 +307,7 @@ func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		formatUptime(hostInfo.Uptime),
 
 		// CPU
+		cpuCountsPhysical,
 		cpuCounts,
 		cpuUsage[0],
 
@@ -255,6 +326,9 @@ func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		// Network
 		FormatFileSize(int64(bytesSent)),
 		FormatFileSize(int64(bytesRecv)),
+
+		// Speed Test
+		speedTestInfo,
 
 		// Bot Process
 		formatDuration(botUptime),
