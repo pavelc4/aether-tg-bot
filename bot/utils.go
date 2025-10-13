@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -20,41 +22,73 @@ import (
 	"github.com/shirou/gopsutil/v3/process"
 )
 
-var botStartTime = time.Now()
+const (
+	speedTestURL     = "https://speed.cloudflare.com/__down?bytes=10000000" // 10MB
+	speedTestTimeout = 30 * time.Second
+	latencyTestURL   = "https://www.google.com"
+)
+
+var (
+	botStartTime = time.Now()
+	ownerID      int64
+	ownerIDOnce  sync.Once
+
+	markdownV2Replacer = strings.NewReplacer(
+		"_", "\\_", "*", "\\*", "[", "\\[", "]", "\\]",
+		"(", "\\(", ")", "\\)", "~", "\\~", "`", "\\`",
+		">", "\\>", "#", "\\#", "+", "\\+", "-", "\\-",
+		"=", "\\=", "|", "\\|", "{", "\\{", "}", "\\}",
+		".", "\\.", "!", "\\!",
+	)
+
+	supportedPlatforms = []string{
+		"Bilibili", "Bluesky", "Dailymotion", "Facebook",
+		"Instagram", "Loom", "OK", "Pinterest", "Newgrounds",
+		"Reddit", "Rutube", "Snapchat", "Soundcloud",
+		"Streamable", "TikTok", "Tumblr", "Twitch",
+		"Twitter", "Vimeo", "VK", "Xiaohongshu", "YouTube",
+	}
+)
 
 func IsOwner(userID int64) bool {
-	ownerID := config.GetOwnerID()
-	if ownerID == 0 {
-		return false
-	}
-	return userID == ownerID
+	ownerIDOnce.Do(func() {
+		ownerID = config.GetOwnerID()
+	})
+	return ownerID != 0 && userID == ownerID
 }
 
 func ResolveFinalURL(url string) (string, error) {
-	client := &http.Client{
-		Timeout: 15 * time.Second,
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := client.Get(url)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("gagal membuka link: %w", err)
+		return "", fmt.Errorf("failed to open link: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	finalURL := resp.Request.URL.String()
-	fmt.Printf("URL asli: %s -> URL final: %s\n", url, finalURL)
+	log.Printf("Original URL: %s -> Final URL: %s", url, finalURL)
 
 	return finalURL, nil
 }
 
 func FormatFileSize(size int64) string {
 	const (
-		B  = 1
-		KB = 1024 * B
-		MB = 1024 * KB
-		GB = 1024 * MB
-		TB = 1024 * GB
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+		TB = GB * 1024
 	)
+
 	switch {
 	case size >= TB:
 		return fmt.Sprintf("%.2f TB", float64(size)/TB)
@@ -77,185 +111,212 @@ func GetUserName(msg *tgbotapi.Message) string {
 }
 
 func DeleteDirectory(path string) {
-	_ = os.RemoveAll(path)
+	if err := os.RemoveAll(path); err != nil {
+		log.Printf("Warning: Failed to delete directory %s: %v", path, err)
+	}
 }
 
 func formatUptime(uptimeSec uint64) string {
-	days := uptimeSec / (60 * 60 * 24)
-	hours := (uptimeSec % (60 * 60 * 24)) / (60 * 60)
-	minutes := (uptimeSec % (60 * 60)) / 60
-	seconds := uptimeSec % 60
-
-	if days > 0 {
-		return fmt.Sprintf("%dd %dh %dm %ds", days, hours, minutes, seconds)
-	}
-	if hours > 0 {
-		return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
-	}
-	if minutes > 0 {
-		return fmt.Sprintf("%dm %ds", minutes, seconds)
-	}
-	return fmt.Sprintf("%ds", seconds)
+	return formatDurationFromSeconds(uptimeSec)
 }
 
 func formatDuration(d time.Duration) string {
-	days := int(d.Hours() / 24)
-	hours := int(d.Hours()) % 24
-	minutes := int(d.Minutes()) % 60
-	seconds := int(d.Seconds()) % 60
-
-	if days > 0 {
-		return fmt.Sprintf("%dd %dh %dm %ds", days, hours, minutes, seconds)
-	}
-	if hours > 0 {
-		return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
-	}
-	if minutes > 0 {
-		return fmt.Sprintf("%dm %ds", minutes, seconds)
-	}
-	return fmt.Sprintf("%ds", seconds)
+	return formatDurationFromSeconds(uint64(d.Seconds()))
 }
 
-var markdownV2Replacer = strings.NewReplacer(
-	"_", "\\_", "*", "\\*", "[", "\\[", "]", "\\]", "(", "\\(", ")", "\\)",
-	"~", "\\~", "`", "\\`", ">", "\\>", "#", "\\#", "+", "\\+", "-", "\\-",
-	"=", "\\=", "|", "\\|", "{", "\\{", "}", "\\}", ".", "\\.", "!", "\\!",
-)
+func formatDurationFromSeconds(seconds uint64) string {
+	days := seconds / 86400
+	hours := (seconds % 86400) / 3600
+	minutes := (seconds % 3600) / 60
+	secs := seconds % 60
+
+	switch {
+	case days > 0:
+		return fmt.Sprintf("%dd %dh %dm %ds", days, hours, minutes, secs)
+	case hours > 0:
+		return fmt.Sprintf("%dh %dm %ds", hours, minutes, secs)
+	case minutes > 0:
+		return fmt.Sprintf("%dm %ds", minutes, secs)
+	default:
+		return fmt.Sprintf("%ds", secs)
+	}
+}
 
 func EscapeMarkdownV2(s string) string {
 	return markdownV2Replacer.Replace(s)
 }
 
-// SpeedTestResult holds the results of download/upload speed tests
 type SpeedTestResult struct {
-	DownloadSpeed float64 // MB/s
-	UploadSpeed   float64 // MB/s
+	DownloadSpeed float64
 	Latency       time.Duration
 	Error         error
 }
 
-// RunSpeedTest performs a simple network speed test
 func RunSpeedTest() SpeedTestResult {
+	ctx, cancel := context.WithTimeout(context.Background(), speedTestTimeout)
+	defer cancel()
+
 	result := SpeedTestResult{}
 
-	// Test latency (ping)
-	latencyStart := time.Now()
-	resp, err := http.Head("https://www.google.com")
-	if err == nil {
-		result.Latency = time.Since(latencyStart)
-		resp.Body.Close()
+	if latency, err := testLatency(ctx); err == nil {
+		result.Latency = latency
 	}
 
-	// Test download speed (10MB file from fast.com CDN or similar)
-	downloadURL := "https://speed.cloudflare.com/__down?bytes=10000000" // 10MB
-	downloadStart := time.Now()
-
-	resp, err = http.Get(downloadURL)
+	downloadSpeed, err := testDownloadSpeed(ctx)
 	if err != nil {
-		result.Error = fmt.Errorf("download test failed: %w", err)
-		return result
-	}
-	defer resp.Body.Close()
-
-	downloaded, err := io.Copy(io.Discard, resp.Body)
-	if err != nil {
-		result.Error = fmt.Errorf("download read failed: %w", err)
+		result.Error = err
 		return result
 	}
 
-	downloadDuration := time.Since(downloadStart).Seconds()
-	if downloadDuration > 0 {
-		result.DownloadSpeed = float64(downloaded) / downloadDuration / 1024 / 1024 // Convert to MB/s
-	}
-
-	// Note: Upload test is more complex and requires a server that accepts uploads
-	// For now, we'll skip upload test or use a simple HEAD request as estimation
-	result.UploadSpeed = 0 // Can be implemented later if needed
-
+	result.DownloadSpeed = downloadSpeed
 	return result
 }
 
+func testLatency(ctx context.Context) (time.Duration, error) {
+	start := time.Now()
+
+	req, err := http.NewRequestWithContext(ctx, "HEAD", latencyTestURL, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	return time.Since(start), nil
+}
+
+func testDownloadSpeed(ctx context.Context) (float64, error) {
+	start := time.Now()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", speedTestURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("download test failed: %w", err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("download test failed: %w", err)
+	}
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	downloaded, err := io.Copy(io.Discard, resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("download read failed: %w", err)
+	}
+
+	duration := time.Since(start).Seconds()
+	if duration <= 0 {
+		return 0, fmt.Errorf("invalid duration")
+	}
+
+	return float64(downloaded) / duration / 1024 / 1024, nil
+}
+
 func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	// Check if user is owner
 	if !IsOwner(msg.From.ID) {
-		msgConfig := tgbotapi.NewMessage(msg.Chat.ID, "❌ Perintah ini hanya dapat digunakan oleh owner bot.")
-		bot.Send(msgConfig)
+		sendMessage(bot, msg.Chat.ID, "❌ This command can only be used by the bot owner.")
 		return
 	}
 
-	// Send processing message
-	processingMsg := tgbotapi.NewMessage(msg.Chat.ID, "⏳ Mengambil informasi sistem...")
-	sentMsg, _ := bot.Send(processingMsg)
-
-	// Defer cleanup and panic recovery
-	defer func() {
-		if r := recover(); r != nil {
-			errorMsg := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("❌ Error: %v", r))
-			bot.Send(errorMsg)
-			log.Printf("Panic in HandleStatusCommand: %v\n", r)
-		}
-	}()
-
-	// Gather system info with error handling
-	hostInfo, err := host.Info()
+	processingMsg, err := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Fetching system information..."))
 	if err != nil {
-		log.Printf("Error getting host info: %v", err)
-		hostInfo = &host.InfoStat{Hostname: "Unknown", OS: "Unknown", Uptime: 0}
+		log.Printf("Failed to send processing message: %v", err)
+		return
 	}
+	defer deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
 
-	cpuCounts, _ := cpu.Counts(true)
-	cpuCountsPhysical, _ := cpu.Counts(false)
-	cpuUsage, err := cpu.Percent(time.Second, false)
-	if err != nil || len(cpuUsage) == 0 {
-		cpuUsage = []float64{0.0}
-	}
+	sysInfo := gatherSystemInfo()
 
-	ramInfo, err := mem.VirtualMemory()
-	if err != nil {
-		log.Printf("Error getting RAM info: %v", err)
-		ramInfo = &mem.VirtualMemoryStat{}
-	}
-
-	diskInfo, err := disk.Usage("/")
-	if err != nil {
-		log.Printf("Error getting disk info: %v", err)
-		diskInfo = &disk.UsageStat{}
-	}
-
-	netIO, _ := net.IOCounters(false)
-	var bytesSent, bytesRecv uint64
-	if len(netIO) > 0 {
-		bytesSent = netIO[0].BytesSent
-		bytesRecv = netIO[0].BytesRecv
-	}
-
-	// Process Info
-	proc, err := process.NewProcess(int32(os.Getpid()))
-	var procRAMUsage int64
-	var procCPU float64
-	if err == nil {
-		if procRAMInfo, err := proc.MemoryInfo(); err == nil {
-			procRAMUsage = int64(procRAMInfo.RSS)
-		}
-		procCPU, _ = proc.CPUPercent()
-	}
-
-	// Go Runtime Info
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	// Bot uptime
-	botUptime := time.Since(botStartTime)
-
-	// Run speedtest
-	bot.Request(tgbotapi.NewEditMessageText(msg.Chat.ID, sentMsg.MessageID, "⏳ Menjalankan speedtest..."))
+	updateProcessingMessage(bot, msg.Chat.ID, processingMsg.MessageID, "⏳ Running speedtest...")
 	speedTest := RunSpeedTest()
 
+	statusText := buildStatusText(sysInfo, speedTest)
+	sendMarkdownMessage(bot, msg.Chat.ID, statusText)
+}
+
+type SystemInfo struct {
+	HostInfo    *host.InfoStat
+	CPUCounts   int
+	CPUPhysical int
+	CPUUsage    float64
+	RAMInfo     *mem.VirtualMemoryStat
+	DiskInfo    *disk.UsageStat
+	BytesSent   uint64
+	BytesRecv   uint64
+	ProcRAM     int64
+	ProcCPU     float64
+	BotUptime   time.Duration
+	GoRoutines  int
+	HeapAlloc   uint64
+	NumGC       uint32
+}
+
+func gatherSystemInfo() SystemInfo {
+	info := SystemInfo{}
+
+	if hostInfo, err := host.Info(); err == nil {
+		info.HostInfo = hostInfo
+	} else {
+		log.Printf("Error getting host info: %v", err)
+		info.HostInfo = &host.InfoStat{Hostname: "Unknown", OS: "Unknown"}
+	}
+
+	info.CPUCounts, _ = cpu.Counts(true)
+	info.CPUPhysical, _ = cpu.Counts(false)
+
+	if cpuUsage, err := cpu.Percent(time.Second, false); err == nil && len(cpuUsage) > 0 {
+		info.CPUUsage = cpuUsage[0]
+	}
+
+	if ramInfo, err := mem.VirtualMemory(); err == nil {
+		info.RAMInfo = ramInfo
+	} else {
+		log.Printf("Error getting RAM info: %v", err)
+		info.RAMInfo = &mem.VirtualMemoryStat{}
+	}
+
+	if diskInfo, err := disk.Usage("/"); err == nil {
+		info.DiskInfo = diskInfo
+	} else {
+		log.Printf("Error getting disk info: %v", err)
+		info.DiskInfo = &disk.UsageStat{}
+	}
+
+	if netIO, err := net.IOCounters(false); err == nil && len(netIO) > 0 {
+		info.BytesSent = netIO[0].BytesSent
+		info.BytesRecv = netIO[0].BytesRecv
+	}
+
+	if proc, err := process.NewProcess(int32(os.Getpid())); err == nil {
+		if procRAMInfo, err := proc.MemoryInfo(); err == nil {
+			info.ProcRAM = int64(procRAMInfo.RSS)
+		}
+		info.ProcCPU, _ = proc.CPUPercent()
+	}
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	info.GoRoutines = runtime.NumGoroutine()
+	info.HeapAlloc = m.HeapAlloc
+	info.NumGC = m.NumGC
+
+	info.BotUptime = time.Since(botStartTime)
+
+	return info
+}
+
+func buildStatusText(info SystemInfo, speedTest SpeedTestResult) string {
 	speedTestInfo := "N/A"
 	if speedTest.Error == nil {
 		speedTestInfo = fmt.Sprintf(
-			"├─ Download: `%.2f MB/s`\n"+
-				"└─ Latency: `%dms`",
+			"├─ Download: `%.2f MB/s`\n└─ Latency: `%dms`",
 			speedTest.DownloadSpeed,
 			speedTest.Latency.Milliseconds(),
 		)
@@ -263,145 +324,97 @@ func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		speedTestInfo = fmt.Sprintf("└─ Error: `%s`", speedTest.Error.Error())
 	}
 
-	// Build status text
-	statusText := fmt.Sprintf(
+	return fmt.Sprintf(
 		"🖥️ *System Information*\n"+
 			"├─ OS: `%s`\n"+
 			"├─ Hostname: `%s`\n"+
 			"└─ Uptime: `%s`\n\n"+
-
 			"⚙️ *CPU*\n"+
 			"├─ Cores: `%d`,`%d` Thread\n"+
 			"└─ Usage: `%.2f%%`\n\n"+
-
 			"💾 *Memory*\n"+
 			"├─ RAM: `%s / %s` `(%.1f%%)`\n"+
 			"└─ Available: `%s`\n\n"+
-
-			"💿 *Disk (/)*\n"+
+			"💿 *Disk (/*)\n"+
 			"├─ Used: `%s / %s` `(%.1f%%)`\n"+
 			"└─ Free: `%s`\n\n"+
-
 			"🌐 *Network*\n"+
 			"├─ Sent: `%s`\n"+
 			"└─ Received: `%s`\n\n"+
-
 			"🚀 *Speed Test*\n"+
 			"%s\n\n"+
-
 			"🐹 *Bot Process*\n"+
 			"├─ Uptime: `%s`\n"+
 			"├─ PID: `%d`\n"+
 			"├─ CPU: `%.2f%%`\n"+
 			"├─ Memory: `%s`\n"+
 			"└─ Go Version: `%s`\n\n"+
-
 			"🔧 *Go Runtime*\n"+
 			"├─ Goroutines: `%d`\n"+
 			"├─ Heap Alloc: `%s`\n"+
 			"└─ GC Runs: `%d`",
-
-		// System
-		hostInfo.OS,
-		hostInfo.Hostname,
-		formatUptime(hostInfo.Uptime),
-
-		// CPU
-		cpuCountsPhysical,
-		cpuCounts,
-		cpuUsage[0],
-
-		// Memory
-		FormatFileSize(int64(ramInfo.Used)),
-		FormatFileSize(int64(ramInfo.Total)),
-		ramInfo.UsedPercent,
-		FormatFileSize(int64(ramInfo.Available)),
-
-		// Disk
-		FormatFileSize(int64(diskInfo.Used)),
-		FormatFileSize(int64(diskInfo.Total)),
-		diskInfo.UsedPercent,
-		FormatFileSize(int64(diskInfo.Free)),
-
-		// Network
-		FormatFileSize(int64(bytesSent)),
-		FormatFileSize(int64(bytesRecv)),
-
-		// Speed Test
+		info.HostInfo.OS,
+		info.HostInfo.Hostname,
+		formatUptime(info.HostInfo.Uptime),
+		info.CPUPhysical,
+		info.CPUCounts,
+		info.CPUUsage,
+		FormatFileSize(int64(info.RAMInfo.Used)),
+		FormatFileSize(int64(info.RAMInfo.Total)),
+		info.RAMInfo.UsedPercent,
+		FormatFileSize(int64(info.RAMInfo.Available)),
+		FormatFileSize(int64(info.DiskInfo.Used)),
+		FormatFileSize(int64(info.DiskInfo.Total)),
+		info.DiskInfo.UsedPercent,
+		FormatFileSize(int64(info.DiskInfo.Free)),
+		FormatFileSize(int64(info.BytesSent)),
+		FormatFileSize(int64(info.BytesRecv)),
 		speedTestInfo,
-
-		// Bot Process
-		formatDuration(botUptime),
+		formatDuration(info.BotUptime),
 		os.Getpid(),
-		procCPU,
-		FormatFileSize(procRAMUsage),
+		info.ProcCPU,
+		FormatFileSize(info.ProcRAM),
 		runtime.Version(),
-
-		// Go Runtime
-		runtime.NumGoroutine(),
-		FormatFileSize(int64(m.HeapAlloc)),
-		m.NumGC,
+		info.GoRoutines,
+		FormatFileSize(int64(info.HeapAlloc)),
+		info.NumGC,
 	)
-
-	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, statusText)
-	msgConfig.ParseMode = "MarkdownV2"
-
-	// Delete processing message
-	deleteMsg := tgbotapi.NewDeleteMessage(msg.Chat.ID, sentMsg.MessageID)
-	bot.Request(deleteMsg)
-
-	// Send final status
-	if _, err := bot.Send(msgConfig); err != nil {
-		log.Printf("Error sending status: %v", err)
-		// Try sending without markdown if it fails
-		msgConfig.ParseMode = ""
-		msgConfig.Text = strings.ReplaceAll(statusText, "`", "")
-		msgConfig.Text = strings.ReplaceAll(msgConfig.Text, "*", "")
-		bot.Send(msgConfig)
-	}
 }
 
 func BuildMediaCaption(source, url, fileType string, fileSize int64, duration time.Duration, user string) string {
-	escapedSource := EscapeMarkdownV2(strings.ToLower(source))
-	escapedURL := EscapeMarkdownV2(url)
-	escapedFileType := EscapeMarkdownV2(fileType)
-	escapedSize := EscapeMarkdownV2(FormatFileSize(fileSize))
-	escapedDuration := EscapeMarkdownV2(duration.String())
-	escapedUser := EscapeMarkdownV2(user)
-
-	captionFormat := `✅ *%s Berhasil Diunduh*` + "\n\n" +
-		"🔗 *Sumber:* [%s](%s)" + "\n" +
-		"💾 *Ukuran:* %s" + "\n" +
-		"⏱️ *Durasi Proses:* %s" + "\n" +
-		"👤 *Oleh:* %s"
-
 	return fmt.Sprintf(
-		captionFormat,
-		escapedFileType,
-		escapedSource,
-		escapedURL,
-		escapedSize,
-		escapedDuration,
-		escapedUser,
+		`✅ *%s Downloaded Successfully*`+"\n\n"+
+			"🔗 *Source:* [%s](%s)"+"\n"+
+			"💾 *Size:* %s"+"\n"+
+			"⏱️ *Processing Time:* %s"+"\n"+
+			"👤 *By:* %s",
+		EscapeMarkdownV2(fileType),
+		EscapeMarkdownV2(strings.ToLower(source)),
+		EscapeMarkdownV2(url),
+		EscapeMarkdownV2(FormatFileSize(fileSize)),
+		EscapeMarkdownV2(duration.String()),
+		EscapeMarkdownV2(user),
 	)
 }
 
 func HandleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	helpText := "Selamat datang di Aether Bot ✨\n\n" +
-		"Bot ini Diciptakan Untuk mempermudah Anda dalam mengunduh konten dari berbagai platform sosial media.\n\n" +
-		"Cukup kirimkan tautan dari platform yang didukung, dan Bot akan mengunduh kontennya Untuk Anda .\n\n" +
-		"Fun fact: Bot ini sepenuhnya ditulis dalam bahasa Go 🐹 \n\n" +
-		"Gunakan perintah /support untuk melihat daftar platform yang didukung.\n\n" +
-		"Perintah yang tersedia:\n" +
-		" • `/help` - Menampilkan pesan bantuan\n" +
-		" • `/stats` - Menampilkan status bot (Owner only)\n" +
-		" • `/support` - Menampilkan daftar platform yang dapat diunduh.\n" +
-		" • `/tikaudio` - Mengunduh audio dari tautan TikTok."
+	helpText := "Welcome to Aether Bot ✨\n\n" +
+		"This bot was created to make it easier for you to download content from various social media platforms.\n\n" +
+		"Just send a link from a supported platform, and the Bot will download the content for you.\n\n" +
+		"Fun fact: This bot is written entirely in Go 🐹\n\n" +
+		"Use the /support command to see a list of supported platforms.\n\n" +
+		"Available commands:\n" +
+		" • `/dl` - Downloads content from a link. Alias: `/mp`\n" +
+		" • `/video` - Downloads only video from a link.\n" +
+		" • `/help` - Displays this help message\n" +
+		" • `/stats` - Displays bot status and system information (Owner only)\n" +
+		" • `/support` - Displays a list of supported platforms for download.\n" +
+		" • `/tikaudio` - Downloads audio from a TikTok link."
 
 	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonURL("Developer", "https://t.me/Pavellc"),
-			tgbotapi.NewInlineKeyboardButtonURL("Donasi", "https://t.me/pavellc"),
+			tgbotapi.NewInlineKeyboardButtonURL("Donate", "https://t.me/pavellc"),
 		),
 	)
 
@@ -411,30 +424,25 @@ func HandleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 }
 
 func HandleSupportCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	supportText := "Platform yang didukung:\n" +
-		"- Bilibili\n" +
-		"- Bluesky\n" +
-		"- Dailymotion\n" +
-		"- Facebook\n" +
-		"- Instagram\n" +
-		"- Loom\n" +
-		"- OK\n" +
-		"- Pinterest\n" +
-		"- Newgrounds\n" +
-		"- Reddit\n" +
-		"- Rutube\n" +
-		"- Snapchat\n" +
-		"- Soundcloud\n" +
-		"- Streamable\n" +
-		"- TikTok\n" +
-		"- Tumblr\n" +
-		"- Twitch\n" +
-		"- Twitter\n" +
-		"- Vimeo\n" +
-		"- VK\n" +
-		"- Xiaohongshu\n" +
-		"- YouTube"
+	supportText := "Supported platforms:\n-" + strings.Join(supportedPlatforms, "\n-")
+	sendMessage(bot, msg.Chat.ID, supportText)
+}
 
-	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, supportText)
-	bot.Send(msgConfig)
+// Helper functions - ONLY declare if not already in handlers.go
+func sendMessage(bot *tgbotapi.BotAPI, chatID int64, text string) {
+	if _, err := bot.Send(tgbotapi.NewMessage(chatID, text)); err != nil {
+		log.Printf("Failed to send message: %v", err)
+	}
+}
+
+func sendMarkdownMessage(bot *tgbotapi.BotAPI, chatID int64, text string) {
+	msgConfig := tgbotapi.NewMessage(chatID, text)
+	msgConfig.ParseMode = "MarkdownV2"
+
+	if _, err := bot.Send(msgConfig); err != nil {
+		log.Printf("Error sending markdown message: %v", err)
+		msgConfig.ParseMode = ""
+		msgConfig.Text = strings.ReplaceAll(strings.ReplaceAll(text, "`", ""), "*", "")
+		bot.Send(msgConfig)
+	}
 }
