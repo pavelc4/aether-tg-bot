@@ -49,6 +49,7 @@ A simple yet powerful Telegram bot to download media from various social media p
 -   Docker and Docker Compose
 -   A Telegram Bot Token. Get one from [@BotFather](https://t.me/BotFather).
 -   A Telegram API ID and Hash. Get them from [my.telegram.org](https://my.telegram.org).
+-   A Telegram OWNER ID . Get one from [@userinfobot](https://t.me/userinfobot).
 
 ### 🐳 Docker Deployment (Recommended)
 
@@ -68,6 +69,7 @@ A simple yet powerful Telegram bot to download media from various social media p
     BOT_TOKEN=YOUR_BOT_TOKEN
     TELEGRAM_API_ID=YOUR_TELEGRAM_API_ID
     TELEGRAM_API_HASH=YOUR_TELEGRAM_API_HASH
+    OWNER_ID=YOUR_ID_TELEGRAM
     ```
 
 3.  **Run with Docker Compose:**
