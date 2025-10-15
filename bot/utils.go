@@ -22,11 +22,52 @@ import (
 	"github.com/shirou/gopsutil/v3/process"
 )
 
+// ==================== Constants ====================
+
 const (
-	speedTestURL     = "https://speed.cloudflare.com/__down?bytes=10000000" // 10MB
-	speedTestTimeout = 30 * time.Second
-	latencyTestURL   = "https://www.google.com"
+	speedTestURL      = "https://speed.cloudflare.com/__down?bytes=10000000"
+	speedTestTimeout  = 30 * time.Second
+	latencyTestURL    = "https://www.google.com"
+	progressBarFilled = "█"
+	progressBarEmpty  = "░"
+	progressBarLength = 20
 )
+
+// ==================== Types ====================
+
+type DownloadProgress struct {
+	Percentage float64
+	Speed      string
+	ETA        string
+	Downloaded string
+	TotalSize  string
+	Status     string
+}
+
+type SystemInfo struct {
+	HostInfo    *host.InfoStat
+	CPUCounts   int
+	CPUPhysical int
+	CPUUsage    float64
+	RAMInfo     *mem.VirtualMemoryStat
+	DiskInfo    *disk.UsageStat
+	BytesSent   uint64
+	BytesRecv   uint64
+	ProcRAM     int64
+	ProcCPU     float64
+	BotUptime   time.Duration
+	GoRoutines  int
+	HeapAlloc   uint64
+	NumGC       uint32
+}
+
+type SpeedTestResult struct {
+	DownloadSpeed float64
+	Latency       time.Duration
+	Error         error
+}
+
+// ==================== Variables ====================
 
 var (
 	botStartTime = time.Now()
@@ -50,6 +91,8 @@ var (
 	}
 )
 
+// ==================== Authorization ====================
+
 func IsOwner(userID int64) bool {
 	ownerIDOnce.Do(func() {
 		ownerID = config.GetOwnerID()
@@ -57,29 +100,32 @@ func IsOwner(userID int64) bool {
 	return ownerID != 0 && userID == ownerID
 }
 
+// ==================== URL Utilities ====================
+
 func ResolveFinalURL(url string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return "", fmt.Errorf("create request failed: %w", err)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to open link: %w", err)
+		return "", fmt.Errorf("resolve URL failed: %w", err)
 	}
-	defer func() {
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-	}()
+	defer resp.Body.Close()
 
 	finalURL := resp.Request.URL.String()
-	log.Printf("Original URL: %s -> Final URL: %s", url, finalURL)
+	if finalURL != url {
+		log.Printf("URL resolved: %s -> %s", url, finalURL)
+	}
 
 	return finalURL, nil
 }
+
+// ==================== Formatting Utilities ====================
 
 func FormatFileSize(size int64) string {
 	const (
@@ -103,25 +149,12 @@ func FormatFileSize(size int64) string {
 	}
 }
 
-func GetUserName(msg *tgbotapi.Message) string {
-	if msg.From.UserName != "" {
-		return "@" + msg.From.UserName
-	}
-	return msg.From.FirstName
-}
-
-func DeleteDirectory(path string) {
-	if err := os.RemoveAll(path); err != nil {
-		log.Printf("Warning: Failed to delete directory %s: %v", path, err)
-	}
+func formatDuration(d time.Duration) string {
+	return formatDurationFromSeconds(uint64(d.Seconds()))
 }
 
 func formatUptime(uptimeSec uint64) string {
 	return formatDurationFromSeconds(uptimeSec)
-}
-
-func formatDuration(d time.Duration) string {
-	return formatDurationFromSeconds(uint64(d.Seconds()))
 }
 
 func formatDurationFromSeconds(seconds uint64) string {
@@ -146,11 +179,73 @@ func EscapeMarkdownV2(s string) string {
 	return markdownV2Replacer.Replace(s)
 }
 
-type SpeedTestResult struct {
-	DownloadSpeed float64
-	Latency       time.Duration
-	Error         error
+func FormatProgressBar(progress float64) string {
+	if progress > 100 {
+		progress = 100
+	}
+	if progress < 0 {
+		progress = 0
+	}
+
+	filled := int(progress / 100 * progressBarLength)
+	empty := progressBarLength - filled
+
+	return fmt.Sprintf(
+		"%s%s %.1f%%",
+		strings.Repeat(progressBarFilled, filled),
+		strings.Repeat(progressBarEmpty, empty),
+		progress,
+	)
 }
+
+// ==================== User Utilities ====================
+
+func GetUserName(msg *tgbotapi.Message) string {
+	if msg.From.UserName != "" {
+		return "@" + msg.From.UserName
+	}
+	return msg.From.FirstName
+}
+
+// ==================== Progress Bar ====================
+
+func BuildProgressMessage(source string, prog DownloadProgress) string {
+	progressBar := FormatProgressBar(prog.Percentage)
+
+	msg := fmt.Sprintf(
+		"⏬ *Downloading from %s*\n\n"+
+			"`%s`\n\n"+
+			"📊 *Progress:* `%s`\n"+
+			"⚡ *Speed:* `%s`\n"+
+			"⏱️ *ETA:* `%s`",
+		EscapeMarkdownV2(source),
+		progressBar,
+		EscapeMarkdownV2(prog.Downloaded),
+		EscapeMarkdownV2(prog.Speed),
+		EscapeMarkdownV2(prog.ETA),
+	)
+
+	if prog.TotalSize != "" {
+		msg += fmt.Sprintf("\n💾 *Total:* `%s`", EscapeMarkdownV2(prog.TotalSize))
+	}
+
+	return msg
+}
+
+func UpdateProgressMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, source string, prog DownloadProgress) {
+	text := BuildProgressMessage(source, prog)
+
+	editConfig := tgbotapi.NewEditMessageText(chatID, messageID, text)
+	editConfig.ParseMode = "MarkdownV2"
+
+	if _, err := bot.Request(editConfig); err != nil {
+		if !strings.Contains(err.Error(), "message is not modified") {
+			log.Printf("Failed to update progress: %v", err)
+		}
+	}
+}
+
+// ==================== Speed Test ====================
 
 func RunSpeedTest() SpeedTestResult {
 	ctx, cancel := context.WithTimeout(context.Background(), speedTestTimeout)
@@ -180,7 +275,7 @@ func testLatency(ctx context.Context) (time.Duration, error) {
 		return 0, err
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -194,69 +289,29 @@ func testDownloadSpeed(ctx context.Context) (float64, error) {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", speedTestURL, nil)
 	if err != nil {
-		return 0, fmt.Errorf("download test failed: %w", err)
+		return 0, fmt.Errorf("speed test request failed: %w", err)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("download test failed: %w", err)
+		return 0, fmt.Errorf("speed test request failed: %w", err)
 	}
-	defer func() {
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-	}()
+	defer resp.Body.Close()
 
 	downloaded, err := io.Copy(io.Discard, resp.Body)
 	if err != nil {
-		return 0, fmt.Errorf("download read failed: %w", err)
+		return 0, fmt.Errorf("speed test read failed: %w", err)
 	}
 
 	duration := time.Since(start).Seconds()
 	if duration <= 0 {
-		return 0, fmt.Errorf("invalid duration")
+		return 0, fmt.Errorf("invalid test duration")
 	}
 
 	return float64(downloaded) / duration / 1024 / 1024, nil
 }
 
-func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	if !IsOwner(msg.From.ID) {
-		sendMessage(bot, msg.Chat.ID, "❌ This command can only be used by the bot owner.")
-		return
-	}
-
-	processingMsg, err := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Fetching system information..."))
-	if err != nil {
-		log.Printf("Failed to send processing message: %v", err)
-		return
-	}
-	defer deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
-
-	sysInfo := gatherSystemInfo()
-
-	updateProcessingMessage(bot, msg.Chat.ID, processingMsg.MessageID, "⏳ Running speedtest...")
-	speedTest := RunSpeedTest()
-
-	statusText := buildStatusText(sysInfo, speedTest)
-	sendMarkdownMessage(bot, msg.Chat.ID, statusText)
-}
-
-type SystemInfo struct {
-	HostInfo    *host.InfoStat
-	CPUCounts   int
-	CPUPhysical int
-	CPUUsage    float64
-	RAMInfo     *mem.VirtualMemoryStat
-	DiskInfo    *disk.UsageStat
-	BytesSent   uint64
-	BytesRecv   uint64
-	ProcRAM     int64
-	ProcCPU     float64
-	BotUptime   time.Duration
-	GoRoutines  int
-	HeapAlloc   uint64
-	NumGC       uint32
-}
+// ==================== System Information ====================
 
 func gatherSystemInfo() SystemInfo {
 	info := SystemInfo{}
@@ -306,11 +361,65 @@ func gatherSystemInfo() SystemInfo {
 	info.GoRoutines = runtime.NumGoroutine()
 	info.HeapAlloc = m.HeapAlloc
 	info.NumGC = m.NumGC
-
 	info.BotUptime = time.Since(botStartTime)
 
 	return info
 }
+
+// ==================== Command Handlers ====================
+
+func HandleStatusCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
+	if !IsOwner(msg.From.ID) {
+		sendMessage(bot, msg.Chat.ID, "❌ This command is restricted to bot owner.")
+		return
+	}
+
+	processingMsg := sendMessage(bot, msg.Chat.ID, "⏳ Gathering system information...")
+	if processingMsg == nil {
+		return
+	}
+	defer deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
+
+	sysInfo := gatherSystemInfo()
+
+	updateProcessingMessage(bot, msg.Chat.ID, processingMsg.MessageID, "⏳ Running speed test...")
+	speedTest := RunSpeedTest()
+
+	statusText := buildStatusText(sysInfo, speedTest)
+	sendMarkdownMessage(bot, msg.Chat.ID, statusText)
+}
+
+func HandleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
+	helpText := "Welcome to Aether Bot ✨\n\n" +
+		"This bot makes it easy to download content from various social media platforms.\n\n" +
+		"Just send a link from a supported platform, and the bot will download it for you.\n\n" +
+		"*Available Commands:*\n" +
+		" • `/dl [URL]` - Download content (alias: `/mp`)\n" +
+		" • `/video [URL]` - Download video only\n" +
+		" • `/tikaudio [URL]` - Download TikTok audio\n" +
+		" • `/help` - Show this help message\n" +
+		" • `/support` - List supported platforms\n" +
+		" • `/stats` - System status (owner only)\n\n" +
+		"Fun fact: This bot is written entirely in Go 🐹"
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("Developer", "https://t.me/Pavellc"),
+			tgbotapi.NewInlineKeyboardButtonURL("Donate", "https://t.me/pavellc"),
+		),
+	)
+
+	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, helpText)
+	msgConfig.ReplyMarkup = keyboard
+	bot.Send(msgConfig)
+}
+
+func HandleSupportCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
+	supportText := "*Supported Platforms:*\n• " + strings.Join(supportedPlatforms, "\n• ")
+	sendMarkdownMessage(bot, msg.Chat.ID, supportText)
+}
+
+// ==================== Message Builders ====================
 
 func buildStatusText(info SystemInfo, speedTest SpeedTestResult) string {
 	speedTestInfo := "N/A"
@@ -330,13 +439,13 @@ func buildStatusText(info SystemInfo, speedTest SpeedTestResult) string {
 			"├─ Hostname: `%s`\n"+
 			"└─ Uptime: `%s`\n\n"+
 			"⚙️ *CPU*\n"+
-			"├─ Cores: `%d`,`%d` Thread\n"+
+			"├─ Cores: `%d` (`%d` threads)\n"+
 			"└─ Usage: `%.2f%%`\n\n"+
 			"💾 *Memory*\n"+
-			"├─ RAM: `%s / %s` `(%.1f%%)`\n"+
+			"├─ Used: `%s / %s` (`%.1f%%`)\n"+
 			"└─ Available: `%s`\n\n"+
-			"💿 *Disk (/*)\n"+
-			"├─ Used: `%s / %s` `(%.1f%%)`\n"+
+			"💿 *Disk (/)*\n"+
+			"├─ Used: `%s / %s` (`%.1f%%`)\n"+
 			"└─ Free: `%s`\n\n"+
 			"🌐 *Network*\n"+
 			"├─ Sent: `%s`\n"+
@@ -397,42 +506,28 @@ func BuildMediaCaption(source, url, fileType string, fileSize int64, duration ti
 	)
 }
 
-func HandleHelpCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	helpText := "Welcome to Aether Bot ✨\n\n" +
-		"This bot was created to make it easier for you to download content from various social media platforms.\n\n" +
-		"Just send a link from a supported platform, and the Bot will download the content for you.\n\n" +
-		"Fun fact: This bot is written entirely in Go 🐹\n\n" +
-		"Use the /support command to see a list of supported platforms.\n\n" +
-		"Available commands:\n" +
-		" • `/dl` - Downloads content from a link. Alias: `/mp`\n" +
-		" • `/video` - Downloads only video from a link.\n" +
-		" • `/help` - Displays this help message\n" +
-		" • `/stats` - Displays bot status and system information (Owner only)\n" +
-		" • `/support` - Displays a list of supported platforms for download.\n" +
-		" • `/tikaudio` - Downloads audio from a TikTok link."
-
-	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL("Developer", "https://t.me/Pavellc"),
-			tgbotapi.NewInlineKeyboardButtonURL("Donate", "https://t.me/pavellc"),
-		),
-	)
-
-	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, helpText)
-	msgConfig.ReplyMarkup = inlineKeyboard
-	bot.Send(msgConfig)
-}
-
-func HandleSupportCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	supportText := "Supported platforms:\n-" + strings.Join(supportedPlatforms, "\n-")
-	sendMessage(bot, msg.Chat.ID, supportText)
-}
-
-// Helper functions - ONLY declare if not already in handlers.go
-func sendMessage(bot *tgbotapi.BotAPI, chatID int64, text string) {
-	if _, err := bot.Send(tgbotapi.NewMessage(chatID, text)); err != nil {
-		log.Printf("Failed to send message: %v", err)
+// DeleteDirectory removes directory and logs errors
+func DeleteDirectory(path string) {
+	if err := os.RemoveAll(path); err != nil {
+		log.Printf("Warning: Failed to delete directory %s: %v", path, err)
 	}
+}
+
+// ==================== Telegram Helper Functions ====================
+
+func deleteMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int) {
+	if _, err := bot.Request(tgbotapi.NewDeleteMessage(chatID, messageID)); err != nil {
+		log.Printf("Failed to delete message: %v", err)
+	}
+}
+
+func sendMessage(bot *tgbotapi.BotAPI, chatID int64, text string) *tgbotapi.Message {
+	msg, err := bot.Send(tgbotapi.NewMessage(chatID, text))
+	if err != nil {
+		log.Printf("Failed to send message: %v", err)
+		return nil
+	}
+	return &msg
 }
 
 func sendMarkdownMessage(bot *tgbotapi.BotAPI, chatID int64, text string) {
@@ -440,9 +535,16 @@ func sendMarkdownMessage(bot *tgbotapi.BotAPI, chatID int64, text string) {
 	msgConfig.ParseMode = "MarkdownV2"
 
 	if _, err := bot.Send(msgConfig); err != nil {
-		log.Printf("Error sending markdown message: %v", err)
+		log.Printf("Failed to send markdown message: %v", err)
 		msgConfig.ParseMode = ""
 		msgConfig.Text = strings.ReplaceAll(strings.ReplaceAll(text, "`", ""), "*", "")
 		bot.Send(msgConfig)
+	}
+}
+
+func updateProcessingMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, text string) {
+	editConfig := tgbotapi.NewEditMessageText(chatID, messageID, text)
+	if _, err := bot.Request(editConfig); err != nil {
+		log.Printf("Failed to update message: %v", err)
 	}
 }

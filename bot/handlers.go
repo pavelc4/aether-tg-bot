@@ -133,7 +133,7 @@ func downloadMediaByContentType(ctx context.Context, originalURL, finalURL strin
 		return "", nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return "", nil, 0, fmt.Errorf("failed to check content type: %w", err)
 	}
@@ -404,22 +404,8 @@ func handleTikTokAudioCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	}
 }
 
-// Helper functions for consistent error handling
-func deleteMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int) {
-	if _, err := bot.Request(tgbotapi.NewDeleteMessage(chatID, messageID)); err != nil {
-		log.Printf("Warning: Failed to delete message: %v", err)
-	}
-}
-
 func sendError(bot *tgbotapi.BotAPI, chatID int64, message string) {
 	if _, err := bot.Send(tgbotapi.NewMessage(chatID, message)); err != nil {
 		log.Printf("Failed to send error message: %v", err)
-	}
-}
-
-func updateProcessingMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, text string) {
-	editConfig := tgbotapi.NewEditMessageText(chatID, messageID, text)
-	if _, err := bot.Request(editConfig); err != nil {
-		log.Printf("Warning: Failed to update message: %v", err)
 	}
 }
