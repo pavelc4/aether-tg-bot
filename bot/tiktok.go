@@ -87,7 +87,7 @@ func fetchAudioURL(ctx context.Context, tiktokURL string) (string, string, strin
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to call API: %w", err)
 	}
@@ -129,7 +129,7 @@ func downloadAudioFile(ctx context.Context, audioURL, tmpDir, title string) (str
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download audio: %w", err)
 	}

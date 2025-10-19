@@ -12,6 +12,18 @@ services:
       - OWNER_ID=${OWNER_ID}
       - COBALT_API=http://cobalt:9000
       - TELEGRAM_API_URL=http://telegram-bot-api:8081
+      - YTDLP_COOKIES=/app/cookies.txt
+      - USE_ARIA2=true  
+    volumes:
+        - ./cookies.txt:/app/cookies.txt:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.50'
+          memory: 256M  
 
   telegram-bot-api:
     image: aiogram/telegram-bot-api:latest
@@ -24,6 +36,15 @@ services:
       - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
     volumes:
       - telegram-data:/var/lib/telegram-bot-api
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
   cobalt:
     image: ghcr.io/imputnet/cobalt:latest
     container_name: cobalt
@@ -32,6 +53,14 @@ services:
       - "8082:9000"
     environment:
       - API_URL=http://cobalt:9000
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
 
 volumes:
   telegram-data:

@@ -3,7 +3,6 @@ package bot
 import (
 	"context"
 	"log"
-	"net/http"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -11,10 +10,9 @@ import (
 )
 
 const (
-	updateTimeout     = 60
-	workerPoolSize    = 100 // Limit concurrent goroutines
-	shutdownTimeout   = 30 * time.Second
-	httpClientTimeout = 30 * time.Second
+	updateTimeout   = 60
+	workerPoolSize  = 100 // Limit concurrent goroutines
+	shutdownTimeout = 30 * time.Second
 )
 
 // StartBot initializes and runs the Telegram bot
@@ -25,15 +23,7 @@ func StartBot(token string) error {
 		log.Printf("Using default Telegram API URL: %s", apiURL)
 	}
 
-	// Create HTTP client with timeout
-	httpClient := &http.Client{
-		Timeout: httpClientTimeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     90 * time.Second,
-		},
-	}
+	httpClient := GetBotClient()
 
 	bot, err := tgbotapi.NewBotAPIWithClient(token, apiURL+"/bot%s/%s", httpClient)
 	if err != nil {

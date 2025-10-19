@@ -26,14 +26,15 @@ FROM alpine:3.21
 # Create non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Install runtime dependencies and yt-dlp in single layer
+# Install runtime dependencies (aria2, yt-dlp, ffmpeg) in single layer
 RUN apk add --no-cache \
     ca-certificates \
     python3 \
     py3-pip \
-    ffmpeg && \
+    ffmpeg \
+    aria2 && \
     pip install --no-cache-dir --break-system-packages yt-dlp && \
-    rm -rf /root/.cache
+    rm -rf /root/.cache /tmp/*
 
 WORKDIR /app
 
@@ -42,9 +43,5 @@ COPY --from=builder --chown=appuser:appgroup /app/aether-bot .
 
 # Switch to non-root user
 USER appuser
-
-# Health check (optional - sesuaikan dengan app kamu)
-# HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-#   CMD ./aether-bot --health || exit 1
 
 CMD ["./aether-bot"]

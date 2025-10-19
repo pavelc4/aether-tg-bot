@@ -222,3 +222,10 @@ func printVersionInfo() {
 	runtime.ReadMemStats(&m)
 	log.Printf("Memory Allocated: %.2f MB", float64(m.Alloc)/1024/1024)
 }
+
+func getCookiePath() string {
+	if cookiePath := os.Getenv("YTDLP_COOKIES"); cookiePath != "" {
+		return cookiePath
+	}
+	return "cookie not found"
+}
