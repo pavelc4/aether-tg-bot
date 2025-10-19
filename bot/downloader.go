@@ -68,6 +68,7 @@ var (
 		"image/jpeg": ".jpg",
 	}
 )
+
 var (
 	// Regex untuk parse yt-dlp progress
 	ytdlpProgressRegex = regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)`)
@@ -108,16 +109,19 @@ func DownloadAudio(url string) ([]string, int64, string, error) {
 }
 
 func runYTDLP(url string, audioOnly bool) ([]string, int64, string, error) {
+	// Try Cobalt first
 	if filePaths, err := DownloadMediaWithCobalt(url, audioOnly); err == nil {
 		return calculateTotalSize(filePaths, "Cobalt")
 	}
 
+	// Fallback to yt-dlp for YouTube
 	if !isYouTubeURL(url) {
 		return nil, 0, "", fmt.Errorf("unsupported platform or download failed")
 	}
 
 	log.Printf("Falling back to yt-dlp for YouTube URL")
 
+	// Try without cookies first (with adaptive aria2c)
 	filePaths, err := DownloadMediaWithYTDLP(url, audioOnly, false)
 	if err != nil {
 		log.Printf("yt-dlp without cookies failed, retrying with cookies...")
@@ -127,7 +131,13 @@ func runYTDLP(url string, audioOnly bool) ([]string, int64, string, error) {
 		}
 	}
 
-	return calculateTotalSize(filePaths, "yt-dlp")
+	// Set provider name based on adaptive mode
+	provider := "yt-dlp"
+	if GetCPUManager().IsEnabled() {
+		provider = "yt-dlp (adaptive)"
+	}
+
+	return calculateTotalSize(filePaths, provider)
 }
 
 func isYouTubeURL(url string) bool {
@@ -158,22 +168,12 @@ func getCookiePath() string {
 	return "cookies.txt"
 }
 
-// isAria2Available checks if aria2c is available and enabled
-func isAria2Available() bool {
-	if os.Getenv("USE_ARIA2") == "false" {
-		return false
-	}
-	_, err := exec.LookPath("aria2c")
-	return err == nil
-}
-
-// DownloadMediaWithYTDLP downloads media using yt-dlp with optional aria2c
-// DownloadMediaWithYTDLP downloads media using yt-dlp with optional aria2c and progress tracking
+// DownloadMediaWithYTDLPWithProgress downloads media using yt-dlp with adaptive aria2c and progress tracking
 func DownloadMediaWithYTDLPWithProgress(mediaURL string, audioOnly, useCookies bool, bot *tgbotapi.BotAPI, chatID int64, msgID int) ([]string, error) {
 	useAria2 := isAria2Available()
 
-	log.Printf("Starting download: url=%s, audio=%v, cookies=%v, aria2=%v",
-		mediaURL, audioOnly, useCookies, useAria2)
+	log.Printf("🚀 Starting download: url=%s, audio=%v, cookies=%v, aria2=%v, adaptive=%v",
+		mediaURL, audioOnly, useCookies, useAria2, GetCPUManager().IsEnabled())
 
 	tmpDir, err := os.MkdirTemp("", "aether-ytdlp-")
 	if err != nil {
@@ -183,7 +183,13 @@ func DownloadMediaWithYTDLPWithProgress(mediaURL string, audioOnly, useCookies b
 	ctx, cancel := context.WithTimeout(context.Background(), ytdlpTimeout)
 	defer cancel()
 
-	args := buildYTDLPArgs(tmpDir, audioOnly, useCookies, useAria2)
+	// Start CPU monitoring in background if bot is provided
+	if bot != nil && GetCPUManager().IsEnabled() {
+		go GetCPUManager().MonitorCPUDuringDownload(ctx, bot, chatID, msgID)
+	}
+
+	// Build yt-dlp args with adaptive aria2c
+	args := buildYTDLPArgsAdaptive(ctx, tmpDir, audioOnly, useCookies, useAria2)
 
 	// Add progress flag for yt-dlp
 	args = append(args, "--newline", "--progress")
@@ -194,6 +200,7 @@ func DownloadMediaWithYTDLPWithProgress(mediaURL string, audioOnly, useCookies b
 	// Capture stdout for progress parsing
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
@@ -219,7 +226,7 @@ func DownloadMediaWithYTDLPWithProgress(mediaURL string, audioOnly, useCookies b
 		return nil, fmt.Errorf("no files downloaded")
 	}
 
-	log.Printf("Downloaded %d file(s) to %s", len(files), tmpDir)
+	log.Printf("✅ Downloaded %d file(s) to %s", len(files), tmpDir)
 	return files, nil
 }
 
@@ -260,8 +267,8 @@ func DownloadMediaWithYTDLP(mediaURL string, audioOnly, useCookies bool) ([]stri
 	return DownloadMediaWithYTDLPWithProgress(mediaURL, audioOnly, useCookies, nil, 0, 0)
 }
 
-// buildYTDLPArgs constructs yt-dlp command arguments
-func buildYTDLPArgs(tmpDir string, audioOnly, useCookies, useAria2 bool) []string {
+// buildYTDLPArgsAdaptive constructs yt-dlp command arguments with adaptive aria2c
+func buildYTDLPArgsAdaptive(ctx context.Context, tmpDir string, audioOnly, useCookies, useAria2 bool) []string {
 	format := "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 	if audioOnly {
 		format = "bestaudio/best"
@@ -277,14 +284,25 @@ func buildYTDLPArgs(tmpDir string, audioOnly, useCookies, useAria2 bool) []strin
 		"--retry-sleep", "3",
 	}
 
-	// Add aria2c if available
-	if useAria2 {
+	// Add adaptive aria2c if available and enabled
+	if useAria2 && GetCPUManager().IsEnabled() {
+		aria2Args := GetCPUManager().BuildAria2Args(ctx)
+		connections := GetCPUManager().GetOptimalConnections(ctx)
+
+		args = append(args,
+			"--external-downloader", "aria2c",
+			"--external-downloader-args", aria2Args,
+			"--concurrent-fragments", fmt.Sprintf("%d", maxInt(1, connections/4)),
+		)
+		log.Printf("✨ Using adaptive aria2c")
+	} else if useAria2 {
+		// Fallback to static aria2c config if adaptive disabled
 		args = append(args,
 			"--external-downloader", "aria2c",
 			"--external-downloader-args", "-c -x 16 -s 16 -k 1M --file-allocation=none",
 			"--concurrent-fragments", "4",
 		)
-		log.Printf("Using aria2c with 16 connections")
+		log.Printf("Using aria2c with 16 connections (static)")
 	}
 
 	// Add cookies if requested
@@ -292,13 +310,21 @@ func buildYTDLPArgs(tmpDir string, audioOnly, useCookies, useAria2 bool) []strin
 		cookiePath := getCookiePath()
 		if _, err := os.Stat(cookiePath); err == nil {
 			args = append(args, "--cookies", cookiePath)
-			log.Printf("Using cookies from: %s", cookiePath)
+			log.Printf("🍪 Using cookies from: %s", cookiePath)
 		} else {
 			log.Printf("Cookie file not found at %s", cookiePath)
 		}
 	}
 
 	return args
+}
+
+// Helper function for max (for Go < 1.21 compatibility)
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // DownloadMediaWithCobalt downloads media using Cobalt API
