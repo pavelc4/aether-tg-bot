@@ -1,4 +1,4 @@
-package bot
+package downloader
 
 import (
 	"bytes"
@@ -24,10 +24,11 @@ const (
 
 // Regex for filename sanitation (compile once)
 var (
-	unsafeCharsRegex = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`) // Corrected escaping for backslash
+	unsafeCharsRegex = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
 	spacesRegex      = regexp.MustCompile(`\s+`)
 )
 
+// TikWMResponse represents TikWM API response
 type TikWMResponse struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
@@ -60,7 +61,7 @@ func DownloadTikTokAudio(tiktokURL string) (filePath, title, author string, err 
 	// Cleanup on error using named returns
 	defer func() {
 		if err != nil {
-			DeleteDirectory(tmpDir)
+			os.RemoveAll(tmpDir)
 		}
 	}()
 
@@ -85,12 +86,14 @@ func fetchAudioURL(ctx context.Context, tiktokURL string) (string, string, strin
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to create request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to call API: %w", err)
 	}
+
 	defer func() {
 		io.Copy(io.Discard, resp.Body) // Drain body for connection reuse
 		resp.Body.Close()
@@ -115,6 +118,7 @@ func fetchAudioURL(ctx context.Context, tiktokURL string) (string, string, strin
 	if audioURL == "" {
 		audioURL = music.PlayURL
 	}
+
 	if audioURL == "" {
 		return "", "", "", fmt.Errorf("audio URL not found in response")
 	}
@@ -133,6 +137,7 @@ func downloadAudioFile(ctx context.Context, audioURL, tmpDir, title string) (str
 	if err != nil {
 		return "", fmt.Errorf("failed to download audio: %w", err)
 	}
+
 	defer func() {
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
@@ -147,12 +152,13 @@ func downloadAudioFile(ctx context.Context, audioURL, tmpDir, title string) (str
 	if safeFilename == "" {
 		safeFilename = "tiktok_audio"
 	}
-	filePath := filepath.Join(tmpDir, safeFilename+".mp3")
 
+	filePath := filepath.Join(tmpDir, safeFilename+".mp3")
 	outFile, err := os.Create(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create audio file: %w", err)
 	}
+
 	defer outFile.Close()
 
 	size, err := io.Copy(outFile, resp.Body)

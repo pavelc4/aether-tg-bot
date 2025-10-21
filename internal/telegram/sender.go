@@ -1,19 +1,37 @@
-package bot
+package telegram
 
 import (
 	"context"
 	"log"
+	"net/http"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/pavelc4/aether-tg-bot/config"
+	"github.com/pavelc4/aether-tg-bot/internal/handlers"
 )
 
 const (
-	updateTimeout   = 60
-	workerPoolSize  = 100 // Limit concurrent goroutines
-	shutdownTimeout = 30 * time.Second
+	updateTimeout     = 60
+	workerPoolSize    = 100 // Limit concurrent goroutines
+	shutdownTimeout   = 30 * time.Second
+	processingTimeout = 10 * time.Minute // Max time for processing one update
 )
+
+// GetBotClient returns HTTP client untuk Telegram Bot API
+func GetBotClient() *http.Client {
+	return &http.Client{
+		Timeout: 90 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 60 * time.Second,
+			DisableKeepAlives:     false,
+		},
+	}
+}
 
 // StartBot initializes and runs the Telegram bot
 func StartBot(token string) error {
@@ -30,7 +48,7 @@ func StartBot(token string) error {
 		return err
 	}
 
-	log.Printf("Bot @%s is now online!", bot.Self.UserName)
+	log.Printf("🤖 Bot @%s is now online!", bot.Self.UserName)
 
 	// Setup update configuration
 	u := tgbotapi.NewUpdate(0)
@@ -55,7 +73,7 @@ func StartBot(token string) error {
 		select {
 		case sem <- struct{}{}:
 		case <-ctx.Done():
-			log.Println("Bot shutting down...")
+			log.Println("🛑 Bot shutting down...")
 			return nil
 		}
 
@@ -67,7 +85,7 @@ func StartBot(token string) error {
 
 				// Recover from panic
 				if r := recover(); r != nil {
-					log.Printf("Panic recovered in update handler: %v", r)
+					log.Printf("💥 Panic recovered in update handler: %v", r)
 				}
 			}()
 
@@ -87,7 +105,7 @@ func processUpdate(ctx context.Context, bot *tgbotapi.BotAPI, update *tgbotapi.U
 	// Check context cancellation
 	select {
 	case <-ctx.Done():
-		log.Printf("Update processing cancelled: %v", ctx.Err())
+		log.Printf("⚠️  Update processing cancelled: %v", ctx.Err())
 		return
 	default:
 	}
@@ -96,21 +114,21 @@ func processUpdate(ctx context.Context, bot *tgbotapi.BotAPI, update *tgbotapi.U
 
 	// Ignore old messages (older than 5 minutes)
 	if time.Since(time.Unix(int64(msg.Date), 0)) > 5*time.Minute {
-		log.Printf("Ignoring old message from %s", msg.From.UserName)
+		log.Printf("⏭️  Ignoring old message from %s", msg.From.UserName)
 		return
 	}
 
 	// Route to appropriate handler
 	if msg.IsCommand() {
-		handleCommand(bot, msg)
+		handlers.HandleCommand(bot, msg)
 	} else {
-		handleMessage(bot, msg)
+		handlers.HandleMessage(bot, msg)
 	}
 }
 
 // GracefulShutdown handles bot shutdown with cleanup
 func GracefulShutdown(bot *tgbotapi.BotAPI) {
-	log.Println("Initiating graceful shutdown...")
+	log.Println("🛑 Initiating graceful shutdown...")
 
 	// Stop receiving updates
 	bot.StopReceivingUpdates()
@@ -118,5 +136,5 @@ func GracefulShutdown(bot *tgbotapi.BotAPI) {
 	// Wait for ongoing operations
 	time.Sleep(shutdownTimeout)
 
-	log.Println("Bot shutdown complete")
+	log.Println("✅ Bot shutdown complete")
 }

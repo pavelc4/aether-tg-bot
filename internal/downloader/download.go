@@ -1,4 +1,4 @@
-package bot
+package downloader
 
 import (
 	"bufio"
@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -36,50 +35,50 @@ var botClient = &http.Client{
 }
 
 // HTTP client untuk download (Cobalt, yt-dlp, images)
-var downloadClient = &http.Client{
-	Timeout: 10 * time.Minute,
-	Transport: &http.Transport{
-		MaxIdleConns:          50,
-		MaxIdleConnsPerHost:   10,
-		MaxConnsPerHost:       30,
-		IdleConnTimeout:       120 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 90 * time.Second,
-		DisableKeepAlives:     false,
-	},
-}
+// var downloadClient = &http.Client{
+// 	Timeout: 10 * time.Minute,
+// 	Transport: &http.Transport{
+// 		MaxIdleConns:          50,
+// 		MaxIdleConnsPerHost:   10,
+// 		MaxConnsPerHost:       30,
+// 		IdleConnTimeout:       120 * time.Second,
+// 		TLSHandshakeTimeout:   10 * time.Second,
+// 		ResponseHeaderTimeout: 90 * time.Second,
+// 		DisableKeepAlives:     false,
+// 	},
+// }
 
 // Content type mappings
-var (
-	contentTypeToExt = map[string]string{
-		"image/png":        ".png",
-		"image/gif":        ".gif",
-		"image/jpeg":       ".jpg",
-		"video/mp4":        ".mp4",
-		"video/webm":       ".webm",
-		"video/quicktime":  ".mov",
-		"video/x-matroska": ".mkv",
-		"audio/mpeg":       ".mp3",
-	}
+// var (
+// 	contentTypeToExt = map[string]string{
+// 		"image/png":        ".png",
+// 		"image/gif":        ".gif",
+// 		"image/jpeg":       ".jpg",
+// 		"video/mp4":        ".mp4",
+// 		"video/webm":       ".webm",
+// 		"video/quicktime":  ".mov",
+// 		"video/x-matroska": ".mkv",
+// 		"audio/mpeg":       ".mp3",
+// 	}
 
-	imageContentTypes = map[string]string{
-		"image/png":  ".png",
-		"image/gif":  ".gif",
-		"image/jpeg": ".jpg",
-	}
-)
+// 	imageContentTypes = map[string]string{
+// 		"image/png":  ".png",
+// 		"image/gif":  ".gif",
+// 		"image/jpeg": ".jpg",
+// 	}
+// )
 
-var (
-	// Regex untuk parse yt-dlp progress
-	ytdlpProgressRegex = regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)`)
-)
+// var (
+// 	// Regex untuk parse yt-dlp progress
+// 	ytdlpProgressRegex = regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)`)
+// )
 
-const (
-	minFileSize     = 5120             // 5KB minimum
-	downloadTimeout = 2 * time.Minute  // HTTP download timeout
-	cobaltTimeout   = 60 * time.Second // Cobalt API timeout
-	ytdlpTimeout    = 10 * time.Minute // yt-dlp execution timeout
-)
+// const (
+// 	minFileSize     = 5120             // 5KB minimum
+// 	downloadTimeout = 2 * time.Minute  // HTTP download timeout
+// 	cobaltTimeout   = 60 * time.Second // Cobalt API timeout
+// 	ytdlpTimeout    = 10 * time.Minute // yt-dlp execution timeout
+// )
 
 // GetBotClient returns HTTP client untuk Telegram Bot API
 func GetBotClient() *http.Client {
