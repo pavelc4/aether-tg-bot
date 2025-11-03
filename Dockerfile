@@ -1,47 +1,51 @@
-# ---- Builder Stage ----
-FROM golang:alpine AS builder
-
-# Install build dependencies
-RUN apk add --no-cache upx ca-certificates git
+FROM golang:latest AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    upx && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy and download modules to leverage Docker cache
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download && go mod verify
 
-# Copy source code
 COPY . .
 
-# Build static binary with optimizations
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-w -s" \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-w -s -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')" \
     -trimpath \
-    -o aether-bot . && \
+    -o aether-bot ./cmd/bot && \
     upx --best --lzma ./aether-bot
 
-# ---- Final Stage ----
-FROM alpine:3.21
+FROM debian:bookworm-slim
 
-# Create non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-
-# Install runtime dependencies (aria2, yt-dlp, ffmpeg) in single layer
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     python3 \
-    py3-pip \
+    python3-pip \
     ffmpeg \
-    aria2 && \
+    aria2 \
+    tzdata \
+    curl \
+    procps && \
     pip install --no-cache-dir --break-system-packages yt-dlp && \
-    rm -rf /root/.cache /tmp/*
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache
+
+RUN groupadd -r appgroup && \
+    useradd -r -g appgroup -u 1000 -d /app -s /sbin/nologin -c "App user" appuser
 
 WORKDIR /app
 
-# Copy binary from builder
 COPY --from=builder --chown=appuser:appgroup /app/aether-bot .
 
-# Switch to non-root user
+RUN mkdir -p /tmp/aether && \
+    chown -R appuser:appgroup /tmp/aether
+
 USER appuser
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD ps aux | grep "[a]ether-bot" > /dev/null || exit 1
 
 CMD ["./aether-bot"]
