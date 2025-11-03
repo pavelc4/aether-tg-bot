@@ -20,12 +20,10 @@ var (
 	once        sync.Once
 )
 
-// BotStats tracks bot statistics
 type BotStats struct {
 	mu        sync.RWMutex
 	StartTime time.Time
 
-	// Total stats
 	TotalDownloads   int64
 	TotalFiles       int64
 	TotalBytes       int64
@@ -35,25 +33,20 @@ type BotStats struct {
 	VideoDownloads   int64
 	ImageDownloads   int64
 
-	// User tracking
 	UniqueUsers map[int64]bool
 
-	// Platform stats
 	PlatformStats map[string]int64
 
-	// Time-based stats
 	DailyStats   map[string]*PeriodStats // YYYY-MM-DD
 	WeeklyStats  map[string]*PeriodStats // YYYY-Www
 	MonthlyStats map[string]*PeriodStats // YYYY-MM
 
 	LastDownloadTime time.Time
 
-	// Network stats baseline
 	NetSentBaseline uint64
 	NetRecvBaseline uint64
 }
 
-// PeriodStats tracks stats for a specific period
 type PeriodStats struct {
 	Downloads int64
 	Files     int64
@@ -61,7 +54,6 @@ type PeriodStats struct {
 	Users     map[int64]bool
 }
 
-// GetStats returns global stats instance
 func GetStats() *BotStats {
 	once.Do(func() {
 		globalStats = &BotStats{
@@ -73,7 +65,6 @@ func GetStats() *BotStats {
 			MonthlyStats:  make(map[string]*PeriodStats),
 		}
 
-		// Initialize network baseline
 		if netStats, err := net.IOCounters(false); err == nil && len(netStats) > 0 {
 			globalStats.NetSentBaseline = netStats[0].BytesSent
 			globalStats.NetRecvBaseline = netStats[0].BytesRecv
@@ -82,7 +73,6 @@ func GetStats() *BotStats {
 	return globalStats
 }
 
-// RecordDownload records a download
 func (s *BotStats) RecordDownload(userID int64, platform, mediaType string, files int, bytes int64, success bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -100,7 +90,6 @@ func (s *BotStats) RecordDownload(userID int64, platform, mediaType string, file
 		s.FailedDownloads++
 	}
 
-	// Track media type
 	switch mediaType {
 	case "Audio":
 		s.AudioDownloads++
@@ -110,15 +99,12 @@ func (s *BotStats) RecordDownload(userID int64, platform, mediaType string, file
 		s.ImageDownloads++
 	}
 
-	// Track unique users
 	s.UniqueUsers[userID] = true
 
-	// Track platform
 	if platform != "" && platform != "Unknown" {
 		s.PlatformStats[platform]++
 	}
 
-	// Track time-based stats
 	dayKey := now.Format("2006-01-02")
 	weekKey := now.Format("2006-W") + getWeekNumber(now)
 	monthKey := now.Format("2006-01")
@@ -146,24 +132,20 @@ func getWeekNumber(t time.Time) string {
 	return fmt.Sprintf("%02d", week)
 }
 
-// GetSystemInfo returns complete system information
 func GetSystemInfo() (*SystemInfo, error) {
 	info := &SystemInfo{}
 
-	// Host info
 	if hostInfo, err := host.Info(); err == nil {
 		info.OS = hostInfo.OS
 		info.Hostname = hostInfo.Hostname
 		info.SystemUptime = time.Duration(hostInfo.Uptime) * time.Second
 	}
 
-	// CPU info
 	if cpuPercent, err := cpu.Percent(time.Second, false); err == nil && len(cpuPercent) > 0 {
 		info.CPUUsage = cpuPercent[0]
 	}
 	info.CPUCores = runtime.NumCPU()
 
-	// Memory info
 	if memInfo, err := mem.VirtualMemory(); err == nil {
 		info.MemUsed = memInfo.Used
 		info.MemTotal = memInfo.Total
@@ -171,7 +153,6 @@ func GetSystemInfo() (*SystemInfo, error) {
 		info.MemAvailable = memInfo.Available
 	}
 
-	// Disk info
 	if diskInfo, err := disk.Usage("/"); err == nil {
 		info.DiskUsed = diskInfo.Used
 		info.DiskTotal = diskInfo.Total
@@ -179,14 +160,12 @@ func GetSystemInfo() (*SystemInfo, error) {
 		info.DiskFree = diskInfo.Free
 	}
 
-	// Network info
 	if netStats, err := net.IOCounters(false); err == nil && len(netStats) > 0 {
 		stats := GetStats()
 		info.NetSent = netStats[0].BytesSent - stats.NetSentBaseline
 		info.NetRecv = netStats[0].BytesRecv - stats.NetRecvBaseline
 	}
 
-	// Process info
 	if proc, err := process.NewProcess(int32(os.Getpid())); err == nil {
 		if cpuPercent, err := proc.CPUPercent(); err == nil {
 			info.ProcessCPU = cpuPercent
@@ -199,7 +178,6 @@ func GetSystemInfo() (*SystemInfo, error) {
 	info.ProcessPID = os.Getpid()
 	info.ProcessUptime = time.Since(GetStats().StartTime)
 
-	// Go runtime
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	info.GoVersion = runtime.Version()
@@ -210,47 +188,38 @@ func GetSystemInfo() (*SystemInfo, error) {
 	return info, nil
 }
 
-// SystemInfo contains complete system information
 type SystemInfo struct {
-	// System
 	OS           string
 	Hostname     string
 	SystemUptime time.Duration
 
-	// CPU
 	CPUCores int
 	CPUUsage float64
 
-	// Memory
 	MemUsed      uint64
 	MemTotal     uint64
 	MemPercent   float64
 	MemAvailable uint64
 
-	// Disk
 	DiskUsed    uint64
 	DiskTotal   uint64
 	DiskPercent float64
 	DiskFree    uint64
 
-	// Network
 	NetSent uint64
 	NetRecv uint64
 
-	// Process
 	ProcessPID    int
 	ProcessUptime time.Duration
 	ProcessCPU    float64
 	ProcessMem    uint64
 
-	// Go Runtime
 	GoVersion  string
 	Goroutines int
 	HeapAlloc  uint64
 	GCRuns     uint32
 }
 
-// GetPeriodStats returns stats for specific period
 func (s *BotStats) GetPeriodStats(period string) *PeriodStats {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

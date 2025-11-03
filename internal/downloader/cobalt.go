@@ -14,7 +14,6 @@ import (
 	"github.com/pavelc4/aether-tg-bot/config"
 )
 
-// cobaltAPIResponse represents Cobalt API response structure
 type cobaltAPIResponse struct {
 	Status   string `json:"status"`
 	URL      string `json:"url"`
@@ -29,7 +28,6 @@ type cobaltAPIResponse struct {
 	} `json:"error"`
 }
 
-// DownloadMediaWithCobalt downloads media using Cobalt API
 func DownloadMediaWithCobalt(mediaURL string, audioOnly bool) ([]string, error) {
 	response, err := requestCobaltAPI(mediaURL, audioOnly)
 	if err != nil {
@@ -38,7 +36,6 @@ func DownloadMediaWithCobalt(mediaURL string, audioOnly bool) ([]string, error) 
 	return processCobaltResponse(response)
 }
 
-// requestCobaltAPI sends request to Cobalt API
 func requestCobaltAPI(mediaURL string, audioOnly bool) (*cobaltAPIResponse, error) {
 	requestBody := map[string]interface{}{
 		"url":          mediaURL,
@@ -75,7 +72,7 @@ func requestCobaltAPI(mediaURL string, audioOnly bool) (*cobaltAPIResponse, erro
 		req.Header.Set("Authorization", "Api-Key "+apiKey)
 	}
 
-	resp, err := downloadClient.Do(req)
+	resp, err := GetDownloadClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("cobalt request failed: %w", err)
 	}
@@ -98,7 +95,6 @@ func requestCobaltAPI(mediaURL string, audioOnly bool) (*cobaltAPIResponse, erro
 	return &cobaltResponse, nil
 }
 
-// processCobaltResponse handles different Cobalt response types
 func processCobaltResponse(response *cobaltAPIResponse) ([]string, error) {
 	switch response.Status {
 	case "tunnel", "redirect":
@@ -113,7 +109,6 @@ func processCobaltResponse(response *cobaltAPIResponse) ([]string, error) {
 	}
 }
 
-// handleTunnelRedirect processes tunnel/redirect response
 func handleTunnelRedirect(response *cobaltAPIResponse) ([]string, error) {
 	if response.URL == "" {
 		return nil, fmt.Errorf("empty URL in tunnel/redirect response")
@@ -127,7 +122,6 @@ func handleTunnelRedirect(response *cobaltAPIResponse) ([]string, error) {
 	return []string{filePath}, nil
 }
 
-// handlePicker processes picker response (multiple files)
 func handlePicker(response *cobaltAPIResponse) ([]string, error) {
 	if len(response.Picker) == 0 {
 		return nil, fmt.Errorf("empty picker array")

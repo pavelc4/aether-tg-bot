@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// DownloadImage downloads an image file
 func DownloadImage(imageURL string) (string, int64, error) {
 	tmpDir, err := os.MkdirTemp("", "aether-image-")
 	if err != nil {
@@ -27,7 +26,7 @@ func DownloadImage(imageURL string) (string, int64, error) {
 		return "", 0, err
 	}
 
-	resp, err := downloadClient.Do(req)
+	resp, err := GetDownloadClient().Do(req)
 	if err != nil {
 		os.RemoveAll(tmpDir)
 		return "", 0, err
@@ -63,7 +62,6 @@ func DownloadImage(imageURL string) (string, int64, error) {
 	return filePath, size, nil
 }
 
-// getImageExtension maps content type to image extension
 func getImageExtension(contentType string) string {
 	for ct, ext := range imageContentTypes {
 		if strings.Contains(contentType, ct) {

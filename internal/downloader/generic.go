@@ -12,7 +12,6 @@ import (
 	"time"
 )
 
-// downloadFile downloads a file from direct URL
 func downloadFile(mediaURL, suggestedFilename string) (string, error) {
 	tmpDir, err := os.MkdirTemp("", "aether-scrape-")
 	if err != nil {
@@ -29,7 +28,7 @@ func downloadFile(mediaURL, suggestedFilename string) (string, error) {
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
-	resp, err := downloadClient.Do(req)
+	resp, err := GetDownloadClient().Do(req)
 	if err != nil {
 		os.RemoveAll(tmpDir)
 		return "", err
@@ -65,14 +64,11 @@ func downloadFile(mediaURL, suggestedFilename string) (string, error) {
 	return filePath, nil
 }
 
-// determineFileExtension extracts file extension from various sources
 func determineFileExtension(resp *http.Response, mediaURL, suggestedFilename string) string {
-	// Priority 1: Suggested filename
 	if ext := filepath.Ext(suggestedFilename); ext != "" {
 		return ext
 	}
 
-	// Priority 2: Content-Type header
 	contentType := resp.Header.Get("Content-Type")
 	for ct, ext := range contentTypeToExt {
 		if strings.Contains(contentType, ct) {
@@ -80,7 +76,6 @@ func determineFileExtension(resp *http.Response, mediaURL, suggestedFilename str
 		}
 	}
 
-	// Priority 3: URL path
 	if parsedURL, err := url.Parse(mediaURL); err == nil {
 		if ext := filepath.Ext(parsedURL.Path); ext != "" {
 			return ext
@@ -90,7 +85,6 @@ func determineFileExtension(resp *http.Response, mediaURL, suggestedFilename str
 	return ".tmp"
 }
 
-// calculateTotalSize sums up file sizes and validates
 func calculateTotalSize(filePaths []string, provider string) ([]string, int64, string, error) {
 	if len(filePaths) == 0 {
 		return nil, 0, "", fmt.Errorf("no files downloaded")

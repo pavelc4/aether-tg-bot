@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// ResolveFinalURL follows redirects and returns final URL
 func ResolveFinalURL(url string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

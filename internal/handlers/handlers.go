@@ -13,12 +13,10 @@ import (
 	"github.com/pavelc4/aether-tg-bot/pkg/utils"
 )
 
-// Compile regex once at package level
 var (
 	urlRegex = regexp.MustCompile(`(https?://[^\s]+)`)
 )
 
-// HandleCommand routes command to appropriate handler
 func HandleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	switch msg.Command() {
 	case "start":
@@ -42,11 +40,10 @@ func HandleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	}
 }
 
-// HandleMessage processes non-command messages (URLs)
 func HandleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	url := urlRegex.FindString(msg.Text)
 	if url == "" {
-		return // Ignore non-URL messages
+		return
 	}
 
 	processingMsg, err := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Processing link, please wait..."))
@@ -57,10 +54,8 @@ func HandleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 	defer deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
 
-	// Track start time
 	start := time.Now()
 
-	// Download media
 	filePaths, size, provider, err := downloader.DownloadVideo(url)
 	if err != nil {
 		sendText(bot, msg.Chat.ID, fmt.Sprintf("❌ Download failed: %v", err))
@@ -71,7 +66,6 @@ func HandleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 	defer downloader.CleanupTempFiles(filePaths)
 
-	// Detect source
 	source := DetectSource(url)
 	duration := time.Since(start)
 	username := msg.From.UserName
@@ -79,14 +73,10 @@ func HandleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		username = msg.From.FirstName
 	}
 
-	// Build caption
 	caption := BuildMediaCaption(source, url, "Video", size, duration, username)
 
-	// Send as media group (album)
 	sendMediaGroup(bot, msg.Chat.ID, filePaths, caption, true)
 }
-
-// Command handlers
 
 func handleStart(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	text := `👋 *Welcome to Aether Downloader Bot!*
@@ -139,7 +129,6 @@ Need help? Contact @pavelc`
 	reply.ParseMode = "Markdown"
 	if _, err := bot.Send(reply); err != nil {
 		log.Printf("Failed to send help message: %v", err)
-		// Fallback tanpa markdown jika error
 		sendText(bot, msg.Chat.ID, strings.ReplaceAll(text, "*", ""))
 	}
 }
@@ -179,7 +168,6 @@ func handleDownloadAudio(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 	caption := BuildMediaCaption(source, args, "Audio", size, duration, username)
 
-	// Send as media group
 	sendMediaGroup(bot, msg.Chat.ID, filePaths, caption, false)
 }
 
@@ -214,7 +202,6 @@ func handleDownloadVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 	caption := BuildMediaCaption(source, args, "Video", size, duration, username)
 
-	// Send as media group
 	sendMediaGroup(bot, msg.Chat.ID, filePaths, caption, true)
 }
 
@@ -223,26 +210,22 @@ func handleDownloadGeneric(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 }
 
 func handleSpeedTest(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	// Check if user is owner
 	if !isOwner(msg.From.ID) {
 		sendText(bot, msg.Chat.ID, "❌ This command is only available to the bot owner.")
 		log.Printf("⚠️  Unauthorized speedtest attempt by user %d (%s)", msg.From.ID, msg.From.UserName)
 		return
 	}
 
-	// Send initial message
 	statusMsg, err := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "🚀 Running Speed Test"))
 	if err != nil {
 		log.Printf("Failed to send speedtest status: %v", err)
 		return
 	}
 
-	// Run speed test
 	start := time.Now()
 	result := utils.RunSpeedTest()
 	totalDuration := time.Since(start)
 
-	// Build result message with tree format
 	var resultText string
 	if result.Error != nil {
 		resultText = fmt.Sprintf(
@@ -251,7 +234,6 @@ func handleSpeedTest(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 			result.Error,
 		)
 	} else {
-		// Convert Mbps to MB/s (1 Mbps = 0.125 MB/s)
 		speedMBps := result.DownloadSpeed / 8
 		resultText = fmt.Sprintf(
 			"🚀 *Network Speed Test*\n"+
@@ -286,17 +268,14 @@ func handleSpeedTest(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 }
 
 func handleStats(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	// Check if user is owner
 	if !isOwner(msg.From.ID) {
 		sendText(bot, msg.Chat.ID, "❌ This command is only available to the bot owner.")
 		log.Printf("⚠️  Unauthorized stats attempt by user %d (%s)", msg.From.ID, msg.From.UserName)
 		return
 	}
 
-	// Send loading message
 	statusMsg, _ := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Gathering system information..."))
 
-	// Get system info
 	sysInfo, err := stats.GetSystemInfo()
 	if err != nil {
 		sendText(bot, msg.Chat.ID, "❌ Failed to get system information")
@@ -304,12 +283,10 @@ func handleStats(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		return
 	}
 
-	// Get period stats
 	todayStats := stats.GetStats().GetPeriodStats("today")
 	weekStats := stats.GetStats().GetPeriodStats("week")
 	monthStats := stats.GetStats().GetPeriodStats("month")
 
-	// Build stats message
 	statsText := fmt.Sprintf(
 		"🖥️ *System Information*\n"+
 			"├─ OS: `%s`\n"+
@@ -384,12 +361,10 @@ func handleStats(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		formatPeriodStats(monthStats),
 	)
 
-	// Update message with stats
 	edit := tgbotapi.NewEditMessageText(msg.Chat.ID, statusMsg.MessageID, statsText)
 	edit.ParseMode = "Markdown"
 	if _, err := bot.Send(edit); err != nil {
 		log.Printf("Failed to update stats message: %v", err)
-		// Fallback: send new message
 		reply := tgbotapi.NewMessage(msg.Chat.ID, statsText)
 		reply.ParseMode = "Markdown"
 		bot.Send(reply)
@@ -398,7 +373,6 @@ func handleStats(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	log.Printf("✅ Stats viewed by owner %d", msg.From.ID)
 }
 
-// formatPeriodStats formats period statistics
 func formatPeriodStats(stats *stats.PeriodStats) string {
 	if stats == nil {
 		return "No data"

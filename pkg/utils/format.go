@@ -19,7 +19,6 @@ var markdownV2Replacer = strings.NewReplacer(
 	".", "\\.", "!", "\\!",
 )
 
-// FormatFileSize formats bytes into human-readable size
 func FormatFileSize(size int64) string {
 	const (
 		KB = 1024
@@ -42,7 +41,6 @@ func FormatFileSize(size int64) string {
 	}
 }
 
-// FormatDuration formats duration into human-readable string
 func FormatDuration(seconds uint64) string {
 	days := seconds / 86400
 	hours := (seconds % 86400) / 3600
@@ -61,12 +59,10 @@ func FormatDuration(seconds uint64) string {
 	}
 }
 
-// EscapeMarkdownV2 escapes special characters for Telegram MarkdownV2
 func EscapeMarkdownV2(s string) string {
 	return markdownV2Replacer.Replace(s)
 }
 
-// FormatProgressBar creates visual progress bar
 func FormatProgressBar(progress float64) string {
 	if progress > 100 {
 		progress = 100

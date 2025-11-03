@@ -10,7 +10,6 @@ import (
 	"github.com/pavelc4/aether-tg-bot/config"
 )
 
-// isOwner checks if user is bot owner
 func isOwner(userID int64) bool {
 	ownerID := config.GetOwnerID()
 	if ownerID == 0 {
@@ -19,7 +18,6 @@ func isOwner(userID int64) bool {
 	return userID == ownerID
 }
 
-// DetectSource detects platform from URL
 func DetectSource(url string) string {
 	sourceMap := map[string]string{
 		"instagram.com":   "Instagram",
@@ -52,14 +50,13 @@ func DetectSource(url string) string {
 	return "Unknown"
 }
 
-// BuildMediaCaption creates formatted caption for media
 func BuildMediaCaption(source, url, mediaType string, size int64, duration time.Duration, username string) string {
 	caption := fmt.Sprintf(
-		"✅ *Media Downloaded Successfully*\n\n"+
-			"🔗 *Source:* %s\n"+
+		" *Media Downloaded Successfully*\n\n"+
+			" *Source:* %s\n"+
 			"💾 *Size:* `%s`\n"+
-			"⏱️ *Processing Time:* `%s`\n"+
-			"👤 *By:* @%s",
+			" *Processing Time:* `%s`\n"+
+			" *By:* @%s",
 		source,
 		FormatFileSize(size),
 		formatDuration(duration),
@@ -69,7 +66,6 @@ func BuildMediaCaption(source, url, mediaType string, size int64, duration time.
 	return caption
 }
 
-// FormatFileSize formats bytes into human-readable size
 func FormatFileSize(size int64) string {
 	const (
 		KB = 1024
@@ -89,7 +85,6 @@ func FormatFileSize(size int64) string {
 	}
 }
 
-// formatDuration formats duration into readable string
 func formatDuration(d time.Duration) string {
 	if d < time.Second {
 		return fmt.Sprintf("%dms", d.Milliseconds())
@@ -102,21 +97,18 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dm %ds", minutes, seconds)
 }
 
-// ============================================================================
-// Telegram messaging helpers
-// ============================================================================
 
 func sendText(bot *tgbotapi.BotAPI, chatID int64, text string) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	if _, err := bot.Send(msg); err != nil {
-		log.Printf("❌ Failed to send text: %v", err)
+		log.Printf(" Failed to send text: %v", err)
 	}
 }
 
 func deleteMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int) {
 	del := tgbotapi.NewDeleteMessage(chatID, msgID)
 	if _, err := bot.Request(del); err != nil {
-		log.Printf("⚠️  Failed to delete message: %v", err)
+		log.Printf("  Failed to delete message: %v", err)
 	}
 }
 
@@ -125,7 +117,7 @@ func sendVideo(bot *tgbotapi.BotAPI, chatID int64, filePath string) {
 	video.SupportsStreaming = true
 
 	if _, err := bot.Send(video); err != nil {
-		log.Printf("❌ Failed to send video: %v", err)
+		log.Printf(" Failed to send video: %v", err)
 	}
 }
 
@@ -136,8 +128,7 @@ func sendVideoWithCaption(bot *tgbotapi.BotAPI, chatID int64, filePath, caption 
 	video.ParseMode = "Markdown"
 
 	if _, err := bot.Send(video); err != nil {
-		log.Printf("❌ Failed to send video with caption: %v", err)
-		// Retry without caption if failed
+		log.Printf(" Failed to send video with caption: %v", err)
 		sendVideo(bot, chatID, filePath)
 	}
 }
@@ -146,7 +137,7 @@ func sendAudio(bot *tgbotapi.BotAPI, chatID int64, filePath string) {
 	audio := tgbotapi.NewAudio(chatID, tgbotapi.FilePath(filePath))
 
 	if _, err := bot.Send(audio); err != nil {
-		log.Printf("❌ Failed to send audio: %v", err)
+		log.Printf(" Failed to send audio: %v", err)
 	}
 }
 
@@ -156,19 +147,16 @@ func sendAudioWithCaption(bot *tgbotapi.BotAPI, chatID int64, filePath, caption 
 	audio.ParseMode = "Markdown"
 
 	if _, err := bot.Send(audio); err != nil {
-		log.Printf("❌ Failed to send audio with caption: %v", err)
-		// Retry without caption if failed
+		log.Printf(" Failed to send audio with caption: %v", err)
 		sendAudio(bot, chatID, filePath)
 	}
 }
 
-// sendMediaGroup sends multiple media as album with caption
 func sendMediaGroup(bot *tgbotapi.BotAPI, chatID int64, filePaths []string, caption string, isVideo bool) error {
 	if len(filePaths) == 0 {
 		return fmt.Errorf("no files to send")
 	}
 
-	// If only one file, send normally with caption
 	if len(filePaths) == 1 {
 		if isVideo {
 			sendVideoWithCaption(bot, chatID, filePaths[0], caption)
@@ -178,7 +166,6 @@ func sendMediaGroup(bot *tgbotapi.BotAPI, chatID int64, filePaths []string, capt
 		return nil
 	}
 
-	// Multiple files - use media group (max 10 files per group)
 	maxMediaGroupSize := 10
 
 	for i := 0; i < len(filePaths); i += maxMediaGroupSize {
@@ -189,12 +176,10 @@ func sendMediaGroup(bot *tgbotapi.BotAPI, chatID int64, filePaths []string, capt
 
 		batch := filePaths[i:end]
 
-		// Build media group
 		var mediaGroup []interface{}
 		for j, path := range batch {
 			if isVideo {
 				media := tgbotapi.NewInputMediaVideo(tgbotapi.FilePath(path))
-				// Add caption only to first media in first batch
 				if i == 0 && j == 0 {
 					media.Caption = caption
 					media.ParseMode = "Markdown"
@@ -210,12 +195,10 @@ func sendMediaGroup(bot *tgbotapi.BotAPI, chatID int64, filePaths []string, capt
 			}
 		}
 
-		// Send media group
 		mediaGroupConfig := tgbotapi.NewMediaGroup(chatID, mediaGroup)
 		if _, err := bot.SendMediaGroup(mediaGroupConfig); err != nil {
-			log.Printf("❌ Failed to send media group (batch %d-%d): %v", i, end, err)
+			log.Printf(" Failed to send media group (batch %d-%d): %v", i, end, err)
 
-			// Fallback: send individually
 			for k, path := range batch {
 				if i == 0 && k == 0 {
 					if isVideo {
@@ -232,14 +215,13 @@ func sendMediaGroup(bot *tgbotapi.BotAPI, chatID int64, filePaths []string, capt
 				}
 			}
 		} else {
-			log.Printf("✅ Sent media group: %d files (batch %d-%d)", len(batch), i, end)
+			log.Printf(" Sent media group: %d files (batch %d-%d)", len(batch), i, end)
 		}
 	}
 
 	return nil
 }
 
-// formatUptime formats duration to human-readable uptime
 func formatUptime(d time.Duration) string {
 	days := int(d.Hours() / 24)
 	hours := int(d.Hours()) % 24

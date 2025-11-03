@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 )
 
-// CleanupTempFiles removes temporary directories safely
 func CleanupTempFiles(filePaths []string) {
 	for _, path := range filePaths {
 		if path == "" {
@@ -20,7 +19,6 @@ func CleanupTempFiles(filePaths []string) {
 	}
 }
 
-// maxInt returns the maximum of two integers (for Go < 1.21 compatibility)
 func maxInt(a, b int) int {
 	if a > b {
 		return a

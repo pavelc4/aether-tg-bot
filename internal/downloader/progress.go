@@ -7,7 +7,6 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// DownloadProgress represents download progress information
 type DownloadProgress struct {
 	Percentage float64
 	Downloaded string
@@ -16,18 +15,17 @@ type DownloadProgress struct {
 	Status     string
 }
 
-// UpdateProgressMessage updates progress message in Telegram
 func UpdateProgressMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int, platform string, progress DownloadProgress) {
 	if bot == nil {
 		return
 	}
 
 	text := fmt.Sprintf(
-		"⏳ *Downloading from %s*\n"+
+		" *Downloading from %s*\n"+
 			"━━━━━━━━━━━━━━━━━\n"+
-			"📊 Progress: `%.1f%%`\n"+
-			"📦 Downloaded: `%s`\n"+
-			"⚡ Speed: `%s`\n"+
+			" Progress: `%.1f%%`\n"+
+			" Downloaded: `%s`\n"+
+			" Speed: `%s`\n"+
 			"⏱ ETA: `%s`\n"+
 			"━━━━━━━━━━━━━━━━━",
 		platform,
@@ -41,6 +39,6 @@ func UpdateProgressMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int, platfo
 	edit.ParseMode = "Markdown"
 
 	if _, err := bot.Send(edit); err != nil {
-		log.Printf("⚠️  Failed to update progress: %v", err)
+		log.Printf("  Failed to update progress: %v", err)
 	}
 }

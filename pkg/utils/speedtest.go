@@ -14,7 +14,6 @@ const (
 	latencyTestURL   = "https://www.google.com"
 )
 
-// SpeedTestResult contains speed test results
 type SpeedTestResult struct {
 	DownloadSpeed   float64       // Mbps
 	UploadSpeed     float64       // Mbps (not implemented yet)
@@ -24,14 +23,12 @@ type SpeedTestResult struct {
 	Error           error
 }
 
-// RunSpeedTest performs network speed test
 func RunSpeedTest() *SpeedTestResult {
 	result := &SpeedTestResult{}
 
 	ctx, cancel := context.WithTimeout(context.Background(), speedTestTimeout)
 	defer cancel()
 
-	// Test latency
 	latency, err := testLatency(ctx)
 	if err != nil {
 		result.Error = fmt.Errorf("latency test failed: %w", err)
@@ -39,7 +36,6 @@ func RunSpeedTest() *SpeedTestResult {
 	}
 	result.Latency = latency
 
-	// Test download speed
 	downloadSpeed, bytesDownloaded, duration, err := testDownloadSpeed(ctx)
 	if err != nil {
 		result.Error = fmt.Errorf("download test failed: %w", err)
@@ -53,7 +49,6 @@ func RunSpeedTest() *SpeedTestResult {
 	return result
 }
 
-// testLatency tests network latency
 func testLatency(ctx context.Context) (time.Duration, error) {
 	client := &http.Client{
 		Timeout: 5 * time.Second,
@@ -75,7 +70,6 @@ func testLatency(ctx context.Context) (time.Duration, error) {
 	return time.Since(start), nil
 }
 
-// testDownloadSpeed tests download speed
 func testDownloadSpeed(ctx context.Context) (float64, int64, time.Duration, error) {
 	client := &http.Client{
 		Timeout: speedTestTimeout,
@@ -94,7 +88,6 @@ func testDownloadSpeed(ctx context.Context) (float64, int64, time.Duration, erro
 	}
 	defer resp.Body.Close()
 
-	// Download and discard data
 	downloaded, err := io.Copy(io.Discard, resp.Body)
 	if err != nil {
 		return 0, 0, 0, err
@@ -102,13 +95,11 @@ func testDownloadSpeed(ctx context.Context) (float64, int64, time.Duration, erro
 
 	duration := time.Since(start)
 
-	// Calculate speed in Mbps
 	seconds := duration.Seconds()
 	if seconds <= 0 {
 		return 0, 0, 0, fmt.Errorf("invalid test duration")
 	}
 
-	// Bytes -> Megabits per second
 	speedMbps := (float64(downloaded) * 8) / seconds / 1_000_000
 
 	return speedMbps, downloaded, duration, nil

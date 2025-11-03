@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-// Content type mappings
 var (
 	contentTypeToExt = map[string]string{
 		"image/png":        ".png",
@@ -24,7 +23,6 @@ var (
 		"image/jpeg": ".jpg",
 	}
 
-	// Regex untuk parse yt-dlp progress
 	ytdlpProgressRegex = regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)`)
 )
 
