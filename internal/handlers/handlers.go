@@ -17,25 +17,23 @@ var (
 	urlRegex = regexp.MustCompile(`(https?://[^\s]+)`)
 )
 
+var commandHandlers = map[string]func(*tgbotapi.BotAPI, *tgbotapi.Message){
+
+	"start":     handleStart,
+	"help":      handleHelp,
+	"speedtest": handleSpeedTest,
+	"stats":     handleStats,
+	"mp":        handleDownloadAudio,
+	"video":     handleDownloadVideo,
+	"dl":        handleDownloadGeneric,
+}
+
 func HandleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	switch msg.Command() {
-	case "start":
-		handleStart(bot, msg)
-	case "help":
-		handleHelp(bot, msg)
-	case "support":
-		handleSupport(bot, msg)
-	case "speedtest":
-		handleSpeedTest(bot, msg)
-	case "stats":
-		handleStats(bot, msg)
-	case "mp":
-		handleDownloadAudio(bot, msg)
-	case "video":
-		handleDownloadVideo(bot, msg)
-	case "dl":
-		handleDownloadGeneric(bot, msg)
-	default:
+	cmd := msg.Command()
+
+	if handler, exists := commandHandlers[cmd]; exists {
+		handler(bot, msg)
+	} else {
 		sendText(bot, msg.Chat.ID, "❌ Unknown command. Type /help to see available commands.")
 	}
 }
@@ -106,35 +104,42 @@ Send me a link to get started!`
 }
 
 func handleHelp(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	text := `📚 *Available Commands:*
+	helpText := "*Aether Downloader Bot*\n\n" +
+		"I can help you download media from various platforms.\n\n" +
+		"*Available Commands:*\n" +
+		" • `/dl [URL]` - Download content\n" +
+		" • `/mp [URL]` - Download audio only\n" +
+		" • `/video [URL]` - Download video only\n" +
+		" • `/start` - Start the bot\n" +
+		" • `/help` - Show this help message\n" +
+		" • `/stats` - Show bot statistics (owner only)\n" +
+		" • `/speedtest` - Test internet speed (owner only)\n\n" +
+		"*Quick Tips:*\n" +
+		" • Just send a URL to download video\n" +
+		" • Bot uses Cobalt API first, then falls back to yt-dlp\n" +
+		" • Adaptive aria2c enabled for faster downloads\n\n" +
+		"*Supported Platforms:*\n" +
+		"YouTube, TikTok, Instagram, X, and more!\n\n" +
+		"_Fun fact: This bot  written  Go 🐹_"
 
-/start - Start the bot
-/help - Show this help message
-/mp [URL] - Download audio only
-/video [URL] - Download video
-/dl [URL] - Generic download
-/stats - Show bot statistics
-/support - Get support
-/speedtest - Test Internet speed (owner Only)
-/stats - Show bot statistics (owner only)
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("Developer", "https://t.me/Pavellc"),
+			tgbotapi.NewInlineKeyboardButtonURL("Support", "https://github.com/pavelc4/aether-tg-bot"),
+		),
+	)
 
-💡 *Quick Tips:*
-• Just send a URL to download video
-• Bot uses Cobalt API first, then falls back to yt-dlp
-• Adaptive aria2c enabled for faster downloads
+	msgConfig := tgbotapi.NewMessage(msg.Chat.ID, helpText)
+	msgConfig.ParseMode = "Markdown"
+	msgConfig.ReplyMarkup = keyboard
 
-Need help? Contact @pavelc`
-
-	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
-	reply.ParseMode = "Markdown"
-	if _, err := bot.Send(reply); err != nil {
+	if _, err := bot.Send(msgConfig); err != nil {
 		log.Printf("Failed to send help message: %v", err)
-		sendText(bot, msg.Chat.ID, strings.ReplaceAll(text, "*", ""))
+		msgConfig.ReplyMarkup = nil
+		msgConfig.ParseMode = ""
+		msgConfig.Text = strings.ReplaceAll(strings.ReplaceAll(helpText, "*", ""), "_", "")
+		bot.Send(msgConfig)
 	}
-}
-
-func handleSupport(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	sendText(bot, msg.Chat.ID, "💬 For support, contact: @your_username")
 }
 
 func handleDownloadAudio(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
