@@ -23,7 +23,7 @@ var (
 		"image/jpeg": ".jpg",
 	}
 
-	ytdlpProgressRegex = regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)`)
+	ytdlpProgressRegex = regexp.MustCompile(`\[download\]\s+([\d.]+)%\s+of\s+~?\s*([^\s]+)(?:\s+in\s+([^\s]+)\s+at\s+([^\s]+)|(?:\s+at\s+([^\s]+)\s+ETA\s+(\S+)))`)
 )
 
 const (

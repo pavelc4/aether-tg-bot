@@ -18,7 +18,6 @@ var (
 )
 
 var commandHandlers = map[string]func(*tgbotapi.BotAPI, *tgbotapi.Message){
-
 	"start":     handleStart,
 	"help":      handleHelp,
 	"speedtest": handleSpeedTest,
@@ -50,13 +49,18 @@ func HandleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		return
 	}
 
-	defer deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
-
 	start := time.Now()
 
-	filePaths, size, provider, err := downloader.DownloadVideo(url)
+	username := msg.From.UserName
+	if username == "" {
+		username = msg.From.FirstName
+	}
+
+	filePaths, size, provider, err := downloader.DownloadVideoWithProgressDetailed(url, bot, msg.Chat.ID, processingMsg.MessageID, username)
 	if err != nil {
-		sendText(bot, msg.Chat.ID, fmt.Sprintf("❌ Download failed: %v", err))
+		errorText := fmt.Sprintf("❌ Download failed: %v", err)
+		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, processingMsg.MessageID, errorText)
+		bot.Send(edit)
 		return
 	}
 
@@ -66,14 +70,12 @@ func HandleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 	source := DetectSource(url)
 	duration := time.Since(start)
-	username := msg.From.UserName
-	if username == "" {
-		username = msg.From.FirstName
-	}
 
 	caption := BuildMediaCaption(source, url, "Video", size, duration, username)
 
 	sendMediaGroup(bot, msg.Chat.ID, filePaths, caption, true)
+
+	deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
 }
 
 func handleStart(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
@@ -92,7 +94,6 @@ I can help you download media from various platforms.
 1. Send me a URL to download video
 2. Use /mp [URL] to download audio only
 3. Use /help for more commands
-
 
 Send me a link to get started!`
 
@@ -117,10 +118,11 @@ func handleHelp(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		"*Quick Tips:*\n" +
 		" • Just send a URL to download video\n" +
 		" • Bot uses Cobalt API first, then falls back to yt-dlp\n" +
-		" • Adaptive aria2c enabled for faster downloads\n\n" +
+		" • Multithreaded downloads with 16 concurrent threads\n" +
+		" • Real-time progress tracking\n\n" +
 		"*Supported Platforms:*\n" +
 		"YouTube, TikTok, Instagram, X, and more!\n\n" +
-		"_Fun fact: This bot  written  Go 🐹_"
+		"_Fun fact: This bot is written in Go 🐹_"
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -150,13 +152,14 @@ func handleDownloadAudio(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	}
 
 	processingMsg, _ := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Downloading audio..."))
-	defer deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
 
 	start := time.Now()
 
-	filePaths, size, provider, err := downloader.DownloadAudio(args)
+	filePaths, size, provider, err := downloader.DownloadAudioWithProgress(args, bot, msg.Chat.ID, processingMsg.MessageID)
 	if err != nil {
-		sendText(bot, msg.Chat.ID, fmt.Sprintf("❌ Download failed: %v", err))
+		errorText := fmt.Sprintf("❌ Download failed: %v", err)
+		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, processingMsg.MessageID, errorText)
+		bot.Send(edit)
 		return
 	}
 
@@ -174,6 +177,8 @@ func handleDownloadAudio(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	caption := BuildMediaCaption(source, args, "Audio", size, duration, username)
 
 	sendMediaGroup(bot, msg.Chat.ID, filePaths, caption, false)
+
+	deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
 }
 
 func handleDownloadVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
@@ -184,13 +189,14 @@ func handleDownloadVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	}
 
 	processingMsg, _ := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Downloading video..."))
-	defer deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
 
 	start := time.Now()
 
-	filePaths, size, provider, err := downloader.DownloadVideo(args)
+	filePaths, size, provider, err := downloader.DownloadVideoWithProgress(args, bot, msg.Chat.ID, processingMsg.MessageID)
 	if err != nil {
-		sendText(bot, msg.Chat.ID, fmt.Sprintf("❌ Download failed: %v", err))
+		errorText := fmt.Sprintf("❌ Download failed: %v", err)
+		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, processingMsg.MessageID, errorText)
+		bot.Send(edit)
 		return
 	}
 
@@ -208,6 +214,8 @@ func handleDownloadVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	caption := BuildMediaCaption(source, args, "Video", size, duration, username)
 
 	sendMediaGroup(bot, msg.Chat.ID, filePaths, caption, true)
+
+	deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
 }
 
 func handleDownloadGeneric(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
@@ -257,12 +265,10 @@ func handleSpeedTest(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		)
 	}
 
-	// Update message with results
 	edit := tgbotapi.NewEditMessageText(msg.Chat.ID, statusMsg.MessageID, resultText)
 	edit.ParseMode = "Markdown"
 	if _, err := bot.Send(edit); err != nil {
 		log.Printf("Failed to update speedtest message: %v", err)
-		// Fallback: send new message
 		reply := tgbotapi.NewMessage(msg.Chat.ID, resultText)
 		reply.ParseMode = "Markdown"
 		bot.Send(reply)
