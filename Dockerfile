@@ -22,16 +22,17 @@ FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    python3 \
-    python3-pip \
     ffmpeg \
     aria2 \
     tzdata \
     curl \
     procps && \
-    pip install --no-cache-dir --break-system-packages yt-dlp && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache
+
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
+    -o /usr/local/bin/yt-dlp_linux  && \
+    chmod +x /usr/local/bin/yt-dlp_linux
 
 RUN groupadd -r appgroup && \
     useradd -r -g appgroup -u 1000 -d /app -s /sbin/nologin -c "App user" appuser
