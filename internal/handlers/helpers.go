@@ -10,6 +10,27 @@ import (
 	"github.com/pavelc4/aether-tg-bot/config"
 )
 
+var platformMap = map[string]string{
+	"instagram.com":   "Instagram",
+	"tiktok.com":      "TikTok",
+	"youtube.com":     "YouTube",
+	"youtu.be":        "YouTube",
+	"x.com":           "X",
+	"facebook.com":    "Facebook",
+	"fb.watch":        "Facebook",
+	"reddit.com":      "Reddit",
+	"pinterest.com":   "Pinterest",
+	"soundcloud.com":  "SoundCloud",
+	"vimeo.com":       "Vimeo",
+	"dailymotion.com": "Dailymotion",
+	"twitch.tv":       "Twitch",
+	"bilibili.com":    "Bilibili",
+	"snapchat.com":    "Snapchat",
+	"tumblr.com":      "Tumblr",
+	"ok.ru":           "OK.ru",
+	"vk.com":          "VK",
+}
+
 func isOwner(userID int64) bool {
 	ownerID := config.GetOwnerID()
 	if ownerID == 0 {
@@ -19,30 +40,8 @@ func isOwner(userID int64) bool {
 }
 
 func DetectSource(url string) string {
-	sourceMap := map[string]string{
-		"instagram.com":   "Instagram",
-		"tiktok.com":      "TikTok",
-		"youtube.com":     "YouTube",
-		"youtu.be":        "YouTube",
-		"twitter.com":     "X (Twitter)",
-		"x.com":           "X (Twitter)",
-		"facebook.com":    "Facebook",
-		"fb.watch":        "Facebook",
-		"reddit.com":      "Reddit",
-		"pinterest.com":   "Pinterest",
-		"soundcloud.com":  "SoundCloud",
-		"vimeo.com":       "Vimeo",
-		"dailymotion.com": "Dailymotion",
-		"twitch.tv":       "Twitch",
-		"bilibili.com":    "Bilibili",
-		"snapchat.com":    "Snapchat",
-		"tumblr.com":      "Tumblr",
-		"ok.ru":           "OK.ru",
-		"vk.com":          "VK",
-	}
-
 	urlLower := strings.ToLower(url)
-	for domain, name := range sourceMap {
+	for domain, name := range platformMap {
 		if strings.Contains(urlLower, domain) {
 			return name
 		}
@@ -50,14 +49,30 @@ func DetectSource(url string) string {
 	return "Unknown"
 }
 
+func formatPlatform(source string) string {
+	source = strings.ToLower(strings.TrimSpace(source))
+
+	for _, platformName := range platformMap {
+		if strings.ToLower(platformName) == source {
+			return platformName
+		}
+	}
+
+	if source != "" {
+		return strings.ToTitle(source)
+	}
+	return "Unknown"
+}
+
 func BuildMediaCaption(source, url, mediaType string, size int64, duration time.Duration, username string) string {
 	caption := fmt.Sprintf(
-		" *Media Downloaded Successfully*\n\n"+
-			" *Source:* %s\n"+
-			"💾 *Size:* `%s`\n"+
-			" *Processing Time:* `%s`\n"+
-			" *By:* @%s",
-		source,
+		"*Media Downloaded Successfully*\n\n"+
+			"🔗 *Source :* [%s](%s)\n"+
+			"💾 *Size :* `%s`\n"+
+			"⏱️ *Processing Time :* `%s`\n"+
+			"👤 *By :* @%s",
+		formatPlatform(source),
+		url,
 		FormatFileSize(size),
 		formatDuration(duration),
 		username,
@@ -96,7 +111,6 @@ func formatDuration(d time.Duration) string {
 	seconds := int(d.Seconds()) % 60
 	return fmt.Sprintf("%dm %ds", minutes, seconds)
 }
-
 
 func sendText(bot *tgbotapi.BotAPI, chatID int64, text string) {
 	msg := tgbotapi.NewMessage(chatID, text)
