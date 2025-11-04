@@ -77,12 +77,35 @@ func DownloadAudio(url string) ([]string, int64, string, error) {
 }
 
 func DownloadAudioWithProgress(url string, bot *tgbotapi.BotAPI, chatID int64, msgID int) ([]string, int64, string, error) {
-	return runYTDLPWithProgress(url, true, bot, chatID, msgID)
+	if filePaths, err := DownloadMediaWithCobalt(url, true); err == nil {
+		return calculateTotalSize(filePaths, "Cobalt")
+	}
+
+	if isTikTokURL(url) {
+		log.Printf("Using TikTok API for audio download (no progress)")
+		return DownloadTikTokAudioWithProgress(url, bot, chatID, msgID)
+	}
+
+	if isYouTubeURL(url) {
+		log.Printf("Using yt-dlp for YouTube audio download (no progress)")
+		return runYTDLP(url, true)
+	}
+
+	return nil, 0, "", fmt.Errorf("unsupported platform or download failed")
 }
 
 func runYTDLP(url string, audioOnly bool) ([]string, int64, string, error) {
 	if filePaths, err := DownloadMediaWithCobalt(url, audioOnly); err == nil {
 		return calculateTotalSize(filePaths, "Cobalt")
+	}
+
+	if audioOnly && isTikTokURL(url) {
+		log.Printf("Using TikTok API for audio download")
+		filePath, _, _, err := DownloadTikTokAudio(url)
+		if err != nil {
+			return nil, 0, "", fmt.Errorf("TikTok audio download failed: %w", err)
+		}
+		return calculateTotalSize([]string{filePath}, "TikTok (tikwm API)")
 	}
 
 	if !isYouTubeURL(url) {
@@ -109,6 +132,15 @@ func runYTDLPWithProgress(url string, audioOnly bool, bot *tgbotapi.BotAPI, chat
 		return calculateTotalSize(filePaths, "Cobalt")
 	}
 
+	if audioOnly && isTikTokURL(url) {
+		log.Printf("Using TikTok API for audio download")
+		filePath, _, _, err := DownloadTikTokAudio(url)
+		if err != nil {
+			return nil, 0, "", fmt.Errorf("TikTok audio download failed: %w", err)
+		}
+		return calculateTotalSize([]string{filePath}, "TikTok (tikwm API)")
+	}
+
 	if !isYouTubeURL(url) {
 		return nil, 0, "", fmt.Errorf("unsupported platform or download failed")
 	}
@@ -130,6 +162,10 @@ func runYTDLPWithProgress(url string, audioOnly bool, bot *tgbotapi.BotAPI, chat
 
 func isYouTubeURL(url string) bool {
 	return strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be")
+}
+
+func isTikTokURL(url string) bool {
+	return strings.Contains(url, "tiktok.com")
 }
 
 func getCookiePath() string {
@@ -351,6 +387,15 @@ func DownloadVideoWithProgressDetailed(url string, bot *tgbotapi.BotAPI, chatID 
 func runYTDLPWithProgressDetailed(url string, audioOnly bool, bot *tgbotapi.BotAPI, chatID int64, msgID int, username string) ([]string, int64, string, error) {
 	if filePaths, err := DownloadMediaWithCobalt(url, audioOnly); err == nil {
 		return calculateTotalSize(filePaths, "Cobalt")
+	}
+
+	if audioOnly && isTikTokURL(url) {
+		log.Printf("Using TikTok API for audio download")
+		filePath, _, _, err := DownloadTikTokAudio(url)
+		if err != nil {
+			return nil, 0, "", fmt.Errorf("TikTok audio download failed: %w", err)
+		}
+		return calculateTotalSize([]string{filePath}, "TikTok (tikwm API)")
 	}
 
 	if !isYouTubeURL(url) {

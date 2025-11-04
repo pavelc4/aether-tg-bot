@@ -192,3 +192,33 @@ func sanitizeFilename(filename string) string {
 
 	return filename
 }
+
+func DownloadTikTokAudioWithProgress(url string, bot interface{}, chatID int64, msgID int) ([]string, int64, string, error) {
+	log.Printf("Starting TikTok audio download for: %s", url)
+
+	filePath, title, _, err := DownloadTikTokAudio(url)
+	if err != nil {
+		return nil, 0, "", fmt.Errorf("TikTok audio download failed: %w", err)
+	}
+
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, 0, "", fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	log.Printf("TikTok audio downloaded successfully: %s (%s)", title, formatFileSize(fileInfo.Size()))
+	return []string{filePath}, fileInfo.Size(), "TikTok (tikwm API)", nil
+}
+
+func formatFileSize(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
