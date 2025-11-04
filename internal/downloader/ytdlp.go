@@ -230,7 +230,7 @@ func trackYTDLPProgress(stdout io.Reader, bot *tgbotapi.BotAPI, chatID int64, ms
 func trackYTDLPProgressWithFilename(stdout io.Reader, bot *tgbotapi.BotAPI, chatID int64, msgID int, fileName string, totalSize string) {
 	scanner := bufio.NewScanner(stdout)
 	lastUpdate := time.Now()
-	updateInterval := 1 * time.Second
+	updateInterval := 4 * time.Second
 	updateTimeout := 10 * time.Second
 	platform := "YouTube"
 
@@ -459,7 +459,7 @@ func DownloadMediaWithYTDLPWithProgressDetailed(mediaURL string, audioOnly, useC
 func trackYTDLPProgressDetailed(stdout io.Reader, bot *tgbotapi.BotAPI, chatID int64, msgID int, username string, tmpDir string) {
 	scanner := bufio.NewScanner(stdout)
 	lastUpdate := time.Now()
-	updateInterval := 1 * time.Second
+	updateInterval := 4 * time.Second
 	updateTimeout := 10 * time.Second
 	platform := "YouTube"
 

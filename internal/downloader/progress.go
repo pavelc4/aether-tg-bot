@@ -17,7 +17,7 @@ type DownloadProgress struct {
 }
 
 func BuildProgressBar(percentage float64) string {
-	const barLength = 20
+	const barLength = 10
 	const filledChar = "■"
 	const emptyChar = "□"
 
