@@ -15,6 +15,48 @@ import (
 	httpclient "github.com/pavelc4/aether-tg-bot/pkg/http"
 )
 
+var UnitMultipliers = map[string]float64{
+	"B":     B,
+	"KB":    KB,
+	"KiB":   KB,
+	"MB":    MB,
+	"MiB":   MB,
+	"GB":    GB,
+	"GiB":   GB,
+	"TB":    TB,
+	"TiB":   TB,
+	"B/s":   B,
+	"KB/s":  KB,
+	"KiB/s": KB,
+	"MB/s":  MB,
+	"MiB/s": MB,
+	"GB/s":  GB,
+	"GiB/s": GB,
+	"TB/s":  TB,
+	"TiB/s": TB,
+}
+
+const (
+	B  = 1
+	KB = 1024 * B
+	MB = 1024 * KB
+	GB = 1024 * MB
+	TB = 1024 * GB
+)
+
+type SizeUnit struct {
+	Name       string
+	Multiplier float64
+}
+
+var SizeUnits = []SizeUnit{
+	{"TB", TB},
+	{"GB", GB},
+	{"MB", MB},
+	{"KB", KB},
+	{"B", B},
+}
+
 type FileDownloader struct {
 	timeout time.Duration
 	client  *http.Client
