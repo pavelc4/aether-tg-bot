@@ -62,7 +62,7 @@ func handleHelp(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonURL("Developer", "https://t.me/Pavellc"),
-			tgbotapi.NewInlineKeyboardButtonURL("Support", "https://github.com/pavelc4/aether-tg-bot"),
+			tgbotapi.NewInlineKeyboardButtonURL("source code", "https://github.com/pavelc4/aether-tg-bot"),
 		),
 	)
 
