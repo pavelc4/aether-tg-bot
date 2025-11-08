@@ -24,10 +24,6 @@ import (
 
 const (
 	youtubeTimeout = 10 * time.Minute
-	KB             = 1024
-	MB             = KB * 1024
-	GB             = MB * 1024
-	TB             = GB * 1024
 )
 
 type YouTubeProvider struct {
@@ -88,44 +84,36 @@ func (yp *YouTubeProvider) Download(ctx context.Context, url string, audioOnly b
 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
 
-	// Setup progress tracking if bot is available
 	if yp.bot != nil && yp.chatID != 0 && yp.msgID != 0 {
-		// Send initial progress message
 		ui.UpdateInitialProgressMessageDetailed(
 			yp.bot, yp.chatID, yp.msgID,
 			yp.fileName, yp.totalSize,
 			"YouTube", yp.username,
 		)
 
-		// ✅ Use StdoutPipe (NOT StderrPipe!) because yt-dlp writes progress to stdout
 		stdoutPipe, err := cmd.StdoutPipe()
 		if err != nil {
 			os.RemoveAll(tmpDir)
 			return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
 		}
 
-		// ✅ Start tracking progress in goroutine
 		go yp.trackProgress(stdoutPipe)
 
-		// Stderr for error messages only
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 
 		log.Printf("YouTube: Executing yt-dlp with %d args (with progress tracking)", len(args))
 
-		// ✅ Use Start() instead of Run() to allow goroutine to work
 		if err := cmd.Start(); err != nil {
 			os.RemoveAll(tmpDir)
 			return nil, fmt.Errorf("failed to start yt-dlp: %w", err)
 		}
 
-		// ✅ Wait for command to complete
 		if err := cmd.Wait(); err != nil {
 			os.RemoveAll(tmpDir)
 			return nil, fmt.Errorf("yt-dlp failed: %w\nStderr: %s", err, stderr.String())
 		}
 	} else {
-		// No progress tracking, just run command
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 
@@ -137,7 +125,6 @@ func (yp *YouTubeProvider) Download(ctx context.Context, url string, audioOnly b
 		}
 	}
 
-	// Collect downloaded files
 	files, err := filepath.Glob(filepath.Join(tmpDir, "*"))
 	if err != nil {
 		os.RemoveAll(tmpDir)
@@ -169,8 +156,7 @@ func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
 	defer stdoutPipe.Close()
 
 	scanner := bufio.NewScanner(stdoutPipe)
-	// Increase buffer for large files
-	buf := make([]byte, 256*1024) // 256KB buffer
+	buf := make([]byte, 256*1024)
 	scanner.Buffer(buf, 256*1024)
 
 	completeRegex := regexp.MustCompile(`\[download\]\s+100%\s+of\s+~?([\d.]+)([KMGT]iB)`)
@@ -179,9 +165,7 @@ func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
 	var allFileSizes []float64
 	var currentFileSize float64 = 0
 
-	// Dynamic update interval based on file size
-	minTelegramInterval := 1500 * time.Millisecond // Prevent Telegram rate limit
-
+	minTelegramInterval := 1500 * time.Millisecond
 	var lastPercentage float64 = -1
 	lineCount := 0
 
@@ -191,26 +175,23 @@ func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
 		line := scanner.Text()
 		lineCount++
 
-		// Log every 10 lines for debugging (optional, remove after testing)
 		if lineCount%10 == 0 {
 			log.Printf("YouTube: Processed %d lines", lineCount)
 		}
 
-		// Check for destination line
 		if strings.Contains(line, "[download] Destination:") {
 			currentFileSize = 0
 			continue
 		}
 
-		// Handle 100% completion
 		completeMatches := completeRegex.FindStringSubmatch(line)
 		if len(completeMatches) > 1 {
 			size, _ := strconv.ParseFloat(completeMatches[1], 64)
 			unit := completeMatches[2]
-			fileSize := convertToBytes(size, unit)
+			fileSize := core.ConvertToBytes(size, unit)
 			allFileSizes = append(allFileSizes, fileSize)
 			currentFileSize = fileSize
-			log.Printf("YouTube: File completed - %.2f MB", fileSize/MB)
+			log.Printf("YouTube: File completed - %.2f MB", fileSize/core.MB)
 
 			totalSizeBytes := float64(0)
 			for _, fs := range allFileSizes {
@@ -220,7 +201,7 @@ func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
 			mu.Lock()
 			progress := ui.DownloadProgress{
 				Percentage: 100.0,
-				Downloaded: formatBytes(totalSizeBytes),
+				Downloaded: core.FormatBytes(totalSizeBytes),
 				Speed:      "Complete",
 				ETA:        "Done",
 				Status:     "Completed",
@@ -230,7 +211,7 @@ func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
 				yp.bot, yp.chatID, yp.msgID,
 				yp.fileName,
 				progress,
-				formatBytes(totalSizeBytes),
+				core.FormatBytes(totalSizeBytes),
 				"YouTube",
 				yp.username,
 			)
@@ -240,13 +221,12 @@ func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
 			continue
 		}
 
-		// Parse progress with regex
 		matches := core.YTDLPProgressRegex.FindStringSubmatch(line)
 		if len(matches) > 2 {
 			percentage, _ := strconv.ParseFloat(matches[1], 64)
 			totalSizeStr := matches[2]
 			totalSizeParsed, unit := parseSize(totalSizeStr)
-			currentFileSize = convertToBytes(totalSizeParsed, unit)
+			currentFileSize = core.ConvertToBytes(totalSizeParsed, unit)
 
 			var speedStr, eta string
 			if matches[3] != "" && matches[4] != "" {
@@ -260,13 +240,12 @@ func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
 			var speedFormatted string
 			if speedStr != "" {
 				speedParsed, speedUnit := parseSize(speedStr)
-				speedBytes := convertToBytes(speedParsed, speedUnit)
-				speedFormatted = formatBytes(speedBytes) + "/s"
+				speedBytes := core.ConvertToBytes(speedParsed, speedUnit)
+				speedFormatted = core.FormatBytes(speedBytes) + "/s"
 			} else {
 				speedFormatted = "--"
 			}
 
-			// Calculate overall progress
 			totalSizeBytes := float64(0)
 			for _, fileSize := range allFileSizes {
 				totalSizeBytes += fileSize
@@ -284,34 +263,27 @@ func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
 				overallPercentage = percentage
 			}
 
-			totalSizeFormatted := formatBytes(totalSizeBytes)
-			downloadedFormatted := formatBytes(totalDownloadedBytes)
+			totalSizeFormatted := core.FormatBytes(totalSizeBytes)
+			downloadedFormatted := core.FormatBytes(totalDownloadedBytes)
 
 			mu.Lock()
 			now := time.Now()
 			timeSinceLastUpdate := now.Sub(lastUpdate)
 
-			// Adaptive update strategy for large files
 			shouldUpdate := false
 
-			// Always enforce minimum Telegram interval
 			if timeSinceLastUpdate < minTelegramInterval {
 				mu.Unlock()
 				continue
 			}
 
-			// For files > 25MB, use larger intervals
-			if currentFileSize > 25*MB {
-				// Update every 3 seconds for large files
+			if currentFileSize > 25*core.MB {
 				shouldUpdate = timeSinceLastUpdate >= 3*time.Second
-				// OR if percentage changed by at least 5%
 				shouldUpdate = shouldUpdate || (math.Abs(percentage-lastPercentage) >= 5.0)
-			} else if currentFileSize > 10*MB {
-				// Medium files: every 2 seconds or 3% change
+			} else if currentFileSize > 10*core.MB {
 				shouldUpdate = timeSinceLastUpdate >= 2*time.Second
 				shouldUpdate = shouldUpdate || (math.Abs(percentage-lastPercentage) >= 3.0)
 			} else {
-				// Small files: every 1.5 seconds or percentage change
 				shouldUpdate = timeSinceLastUpdate >= minTelegramInterval
 				shouldUpdate = shouldUpdate || (percentage != lastPercentage)
 			}
@@ -336,7 +308,7 @@ func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
 
 				lastPercentage = percentage
 				lastUpdate = now
-				log.Printf("YouTube: Progress updated - %.1f%% (%.2f MB)", overallPercentage, currentFileSize/MB)
+				log.Printf("YouTube: Progress updated - %.1f%% (%.2f MB)", overallPercentage, currentFileSize/core.MB)
 			}
 
 			mu.Unlock()
@@ -347,7 +319,6 @@ func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
 		log.Printf("YouTube: Scanner error: %v", err)
 	}
 
-	// Final update at 100%
 	mu.Lock()
 	finalSize := ""
 	finalPercentage := 100.0
@@ -357,9 +328,9 @@ func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
 		for _, fileSize := range allFileSizes {
 			finalTotalBytes += fileSize
 		}
-		finalSize = formatBytes(finalTotalBytes)
+		finalSize = core.FormatBytes(finalTotalBytes)
 	} else if currentFileSize > 0 {
-		finalSize = formatBytes(currentFileSize)
+		finalSize = core.FormatBytes(currentFileSize)
 	} else {
 		finalSize = yp.totalSize
 	}
@@ -403,8 +374,8 @@ func (yp *YouTubeProvider) buildArgs(tmpDir string, audioOnly bool) []string {
 		"--abort-on-error",
 		"--no-warnings",
 		"-N", "16",
-		"--newline",  // Force newline after each progress update
-		"--progress", // Enable progress output
+		"--newline",
+		"--progress",
 	}
 
 	log.Printf("YouTube: Using yt-dlp with 16 concurrent threads")
@@ -425,43 +396,6 @@ func (yp *YouTubeProvider) getCookiePath() string {
 		return path
 	}
 	return "cookies.txt"
-}
-
-func convertToBytes(size float64, unit string) float64 {
-	switch unit {
-	case "KiB", "KB":
-		return size * KB
-	case "MiB", "MB":
-		return size * MB
-	case "GiB", "GB":
-		return size * GB
-	case "TiB", "TB":
-		return size * TB
-	case "KiB/s", "KB/s":
-		return size * KB
-	case "MiB/s", "MB/s":
-		return size * MB
-	case "GiB/s", "GB/s":
-		return size * GB
-	case "TiB/s", "TB/s":
-		return size * TB
-	default:
-		return size
-	}
-}
-
-func formatBytes(bytes float64) string {
-	if bytes < KB {
-		return fmt.Sprintf("%.2f B", bytes)
-	} else if bytes < MB {
-		return fmt.Sprintf("%.2f KB", bytes/KB)
-	} else if bytes < GB {
-		return fmt.Sprintf("%.2f MB", bytes/MB)
-	} else if bytes < TB {
-		return fmt.Sprintf("%.2f GB", bytes/GB)
-	} else {
-		return fmt.Sprintf("%.2f TB", bytes/TB)
-	}
 }
 
 func parseFloat(s string) float64 {

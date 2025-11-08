@@ -41,7 +41,6 @@ type TikWMResponse struct {
 			Play    string `json:"play"`
 			PlayURL string `json:"play_url"`
 		} `json:"music_info"`
-		// ✅ TAMBAH untuk video support
 		VideoInfo struct {
 			DownloadAddr string `json:"downloadAddr"`
 			PlayAddr     string `json:"playAddr"`
@@ -84,7 +83,6 @@ func (tp *TikTokProvider) Download(ctx context.Context, url string, audioOnly bo
 	}
 }
 
-// ✅ NEW: Download Video
 func (tp *TikTokProvider) downloadVideo(ctx context.Context, url string) ([]string, error) {
 	log.Printf("📹 TikTok: Fetching video URL...")
 	response, err := tp.fetchVideoData(ctx, url)
@@ -119,7 +117,6 @@ func (tp *TikTokProvider) downloadVideo(ctx context.Context, url string) ([]stri
 	return []string{filePath}, nil
 }
 
-// ✅ UPDATED: Download Audio (renamed from Download)
 func (tp *TikTokProvider) downloadAudio(ctx context.Context, url string) ([]string, error) {
 	log.Printf("🎵 TikTok: Fetching audio URL...")
 	audioURL, title, author, err := tp.fetchAudioURL(ctx, url)
@@ -144,7 +141,6 @@ func (tp *TikTokProvider) downloadAudio(ctx context.Context, url string) ([]stri
 	return []string{filePath}, nil
 }
 
-// ✅ NEW: Fetch video data
 func (tp *TikTokProvider) fetchVideoData(ctx context.Context, tiktokURL string) (*TikWMResponse, error) {
 	payload := map[string]string{"url": tiktokURL}
 	jsonPayload, err := json.Marshal(payload)
@@ -184,7 +180,6 @@ func (tp *TikTokProvider) fetchVideoData(ctx context.Context, tiktokURL string) 
 	return &result, nil
 }
 
-// ✅ NEW: Download video file
 func (tp *TikTokProvider) downloadVideoFile(ctx context.Context, videoURL, tmpDir string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", videoURL, nil)
 	if err != nil {
