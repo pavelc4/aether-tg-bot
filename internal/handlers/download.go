@@ -33,7 +33,7 @@ func handleDownloadAudio(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		return
 	}
 
-	log.Printf("✅ Downloaded audio via %s: %d files, %.2f MB", provider, len(filePaths), float64(size)/(1024*1024))
+	log.Printf(" Downloaded audio via %s: %d files, %.2f MB", provider, len(filePaths), float64(size)/(1024*1024))
 
 	defer downloader.CleanupTempFiles(filePaths)
 
@@ -70,7 +70,7 @@ func handleDownloadVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		return
 	}
 
-	log.Printf("✅ Downloaded video via %s: %d files, %.2f MB", provider, len(filePaths), float64(size)/(1024*1024))
+	log.Printf(" Downloaded video via %s: %d files, %.2f MB", provider, len(filePaths), float64(size)/(1024*1024))
 
 	defer downloader.CleanupTempFiles(filePaths)
 

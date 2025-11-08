@@ -118,7 +118,7 @@ func sendMediaGroup(bot *tgbotapi.BotAPI, chatID int64, filePaths []string, capt
 				}
 			}
 		} else {
-			log.Printf("✅ Sent media group: %d files (batch %d-%d)", len(batch), i, end)
+			log.Printf(" Sent media group: %d files (batch %d-%d)", len(batch), i, end)
 		}
 	}
 	return nil
