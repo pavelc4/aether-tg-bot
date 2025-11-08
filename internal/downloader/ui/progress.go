@@ -61,7 +61,6 @@ func UpdateProgressMessageDetailed(bot *tgbotapi.BotAPI, chatID int64, msgID int
 
 	edit := tgbotapi.NewEditMessageText(chatID, msgID, text)
 
-	// ✅ Add retry logic for Telegram rate limits
 	maxRetries := 3
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		_, err := bot.Send(edit)
@@ -77,7 +76,6 @@ func UpdateProgressMessageDetailed(bot *tgbotapi.BotAPI, chatID int64, msgID int
 			continue
 		}
 
-		// For other errors, just log and return
 		if attempt == maxRetries-1 {
 			log.Printf(" [Progress] Failed to update after %d attempts: %v", maxRetries, err)
 		}
