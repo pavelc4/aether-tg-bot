@@ -1,11 +1,13 @@
-package downloader
+package cpu
 
 import (
 	"context"
+	"log"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// CPUManager interface
 type CPUManager interface {
 	IsEnabled() bool
 	BuildAria2Args(ctx context.Context) string
@@ -13,18 +15,33 @@ type CPUManager interface {
 	MonitorCPUDuringDownload(ctx context.Context, bot *tgbotapi.BotAPI, chatID int64, msgID int)
 }
 
+// Global CPU manager
+var cpuManager CPUManager
+
+// GetCPUManager return current CPU manager
+func GetCPUManager() CPUManager {
+	if cpuManager == nil {
+		// Initialize default if not set
+		cpuManager = NewAdaptiveManager()
+	}
+	return cpuManager
+}
+
+// SetCPUManager set custom CPU manager
+func SetCPUManager(manager CPUManager) {
+	if manager != nil {
+		cpuManager = manager
+		log.Printf("✅ CPU Manager set: %T", manager)
+	}
+}
+
+// SimpleCPUManager simple implementation
 type SimpleCPUManager struct {
 	enabled bool
 }
 
-var cpuManager CPUManager = &SimpleCPUManager{enabled: false}
-
-func GetCPUManager() CPUManager {
-	return cpuManager
-}
-
-func SetCPUManager(manager CPUManager) {
-	cpuManager = manager
+func NewSimpleCPUManager() *SimpleCPUManager {
+	return &SimpleCPUManager{enabled: false}
 }
 
 func (m *SimpleCPUManager) IsEnabled() bool {
@@ -40,4 +57,5 @@ func (m *SimpleCPUManager) GetOptimalConnections(ctx context.Context) int {
 }
 
 func (m *SimpleCPUManager) MonitorCPUDuringDownload(ctx context.Context, bot *tgbotapi.BotAPI, chatID int64, msgID int) {
+	log.Printf("📊 CPU monitoring (not implemented in SimpleCPUManager)")
 }

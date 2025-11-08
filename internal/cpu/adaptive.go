@@ -1,4 +1,4 @@
-package bot
+package cpu
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/shirou/gopsutil/v4/cpu"
+	gocpu "github.com/shirou/gopsutil/v4/cpu"
 )
 
 type CPUBasedConnectionManager struct {
@@ -22,35 +22,34 @@ type CPUBasedConnectionManager struct {
 	enabled        bool
 }
 
-var (
-	cpuManager     *CPUBasedConnectionManager
-	cpuManagerOnce sync.Once
-)
+func NewAdaptiveManager() *CPUBasedConnectionManager {
+	manager := &CPUBasedConnectionManager{
+		minConnections: 4,
+		maxConnections: 16,
+		updateInterval: 2 * time.Second,
+		enabled:        os.Getenv("ADAPTIVE_ARIA2") != "false",
+	}
 
-func GetCPUManager() *CPUBasedConnectionManager {
-	cpuManagerOnce.Do(func() {
-		cpuManager = &CPUBasedConnectionManager{
-			minConnections: 4,  // Minimum connections saat CPU tinggi
-			maxConnections: 16, // Maximum connections saat CPU rendah (hardcoded limit aria2c)
-			updateInterval: 2 * time.Second,
-			enabled:        os.Getenv("ADAPTIVE_ARIA2") != "false", // Default enabled
-		}
-		log.Printf(" CPU Manager initialized (enabled=%v, min=%d, max=%d)",
-			cpuManager.enabled, cpuManager.minConnections, cpuManager.maxConnections)
-	})
-	return cpuManager
+	log.Printf("✅ Adaptive CPU Manager initialized (enabled=%v, min=%d, max=%d)",
+		manager.enabled, manager.minConnections, manager.maxConnections)
+
+	return manager
+}
+
+func (m *CPUBasedConnectionManager) IsEnabled() bool {
+	return m.enabled
 }
 
 func (m *CPUBasedConnectionManager) GetOptimalConnections(ctx context.Context) int {
 	if !m.enabled {
-		log.Println("⚙️  Adaptive aria2c disabled, using default 8 connections")
+		log.Println("⚙️ Adaptive aria2c disabled, using default 8 connections")
 		return 8
 	}
 
-	percentages, err := cpu.PercentWithContext(ctx, time.Second, false)
+	percentages, err := gocpu.PercentWithContext(ctx, time.Second, false)
 	if err != nil || len(percentages) == 0 {
-		log.Printf("  Failed to get CPU usage, using default: %v", err)
-		return 8 // Default fallback
+		log.Printf("⚠️ Failed to get CPU usage, using default: %v", err)
+		return 8
 	}
 
 	m.mu.Lock()
@@ -58,28 +57,33 @@ func (m *CPUBasedConnectionManager) GetOptimalConnections(ctx context.Context) i
 	m.mu.Unlock()
 
 	connections := m.calculateConnections(m.currentCPU)
-
 	log.Printf(" CPU: %.2f%% → Using %d aria2c connections", m.currentCPU, connections)
 	return connections
 }
 
-func (m *CPUBasedConnectionManager) calculateConnections(cpuPercent float64) int {
-	switch {
-	case cpuPercent > 85:
-		return m.minConnections // 4 connections - CPU sangat tinggi
-	case cpuPercent > 70:
-		return 6 // CPU tinggi
-	case cpuPercent > 55:
-		return 8 // CPU menengah-tinggi
-	case cpuPercent > 40:
-		return 10 // CPU menengah
-	case cpuPercent > 30:
-		return 12 // CPU rendah-menengah
-	case cpuPercent > 20:
-		return 14 // CPU rendah
-	default:
-		return m.maxConnections // 16 connections - CPU sangat rendah
+type cpuLevels map[float64]int
+
+func (m *CPUBasedConnectionManager) levels() cpuLevels {
+	return cpuLevels{
+		85: m.minConnections,
+		70: 6,
+		55: 8,
+		40: 10,
+		30: 12,
+		20: 14,
 	}
+}
+
+func (m *CPUBasedConnectionManager) calculateConnections(cpu float64) int {
+	levels := m.levels()
+	order := []float64{85, 70, 55, 40, 30, 20}
+
+	for _, t := range order {
+		if cpu > t {
+			return levels[t]
+		}
+	}
+	return m.maxConnections
 }
 
 func (m *CPUBasedConnectionManager) GetCurrentCPU() float64 {
@@ -88,13 +92,10 @@ func (m *CPUBasedConnectionManager) GetCurrentCPU() float64 {
 	return m.currentCPU
 }
 
-func (m *CPUBasedConnectionManager) IsEnabled() bool {
-	return m.enabled
-}
-
 func (m *CPUBasedConnectionManager) SetEnabled(enabled bool) {
 	m.enabled = enabled
-	log.Printf(" Adaptive aria2c %s", map[bool]string{true: "enabled", false: "disabled"}[enabled])
+	status := map[bool]string{true: "enabled", false: "disabled"}[enabled]
+	log.Printf("⚙️ Adaptive aria2c %s", status)
 }
 
 func (m *CPUBasedConnectionManager) MonitorCPUDuringDownload(ctx context.Context, bot *tgbotapi.BotAPI, chatID int64, msgID int) {
@@ -108,24 +109,21 @@ func (m *CPUBasedConnectionManager) MonitorCPUDuringDownload(ctx context.Context
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println(" CPU monitoring stopped")
+			log.Println("⏹️ CPU monitoring stopped")
 			return
 		case <-ticker.C:
-			percentages, err := cpu.PercentWithContext(ctx, time.Second, false)
+			percentages, err := gocpu.PercentWithContext(ctx, time.Second, false)
 			if err == nil && len(percentages) > 0 {
 				m.mu.Lock()
 				m.currentCPU = percentages[0]
 				m.mu.Unlock()
 
 				if m.currentCPU > 90 {
-					log.Printf("  HIGH CPU WARNING: %.2f%%", m.currentCPU)
+					log.Printf(" HIGH CPU WARNING: %.2f%%", m.currentCPU)
 				} else if m.currentCPU > 75 {
 					log.Printf(" CPU load: %.2f%%", m.currentCPU)
 				} else {
 					log.Printf(" CPU load: %.2f%%", m.currentCPU)
-				}
-
-				if bot != nil && chatID != 0 && msgID != 0 {
 				}
 			}
 		}
@@ -135,8 +133,8 @@ func (m *CPUBasedConnectionManager) MonitorCPUDuringDownload(ctx context.Context
 func (m *CPUBasedConnectionManager) GetCPUStats() string {
 	cpu := m.GetCurrentCPU()
 	connections := m.calculateConnections(cpu)
-	status := "Normal"
 
+	status := "Normal"
 	if cpu > 85 {
 		status = "Critical"
 	} else if cpu > 70 {
@@ -156,13 +154,12 @@ func (m *CPUBasedConnectionManager) BuildAria2Args(ctx context.Context) string {
 	}
 
 	connections := m.GetOptimalConnections(ctx)
-
 	args := fmt.Sprintf(
 		"-c -x %d -s %d -k 1M --file-allocation=none --max-tries=5 --retry-wait=3",
 		connections, connections,
 	)
 
-	log.Printf(" Aria2c args: %s", args)
+	log.Printf("🔧 Aria2c args: %s", args)
 	return args
 }
 
