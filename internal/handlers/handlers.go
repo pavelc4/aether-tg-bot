@@ -51,7 +51,14 @@ func HandleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		username = msg.From.FirstName
 	}
 
-	filePaths, size, provider, err := downloader.DownloadVideoWithProgressDetailed(url, bot, msg.Chat.ID, processingMsg.MessageID, username)
+	filePaths, size, provider, err := downloader.DownloadVideoWithProgressDetailed(
+		url,
+		bot,
+		msg.Chat.ID,
+		processingMsg.MessageID,
+		username,
+		msg.From.ID,
+	)
 	if err != nil {
 		errorText := fmt.Sprintf("❌ Download failed: %v", err)
 		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, processingMsg.MessageID, errorText)

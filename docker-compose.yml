@@ -15,6 +15,7 @@ services:
       - YTDLP_COOKIES=/app/cookies/cookie.txt
     volumes:
       - ./cookie:/app/cookie:ro
+      - ./data:/app/data
     deploy:
       resources:
         limits:

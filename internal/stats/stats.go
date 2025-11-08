@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -64,6 +65,14 @@ func GetStats() *BotStats {
 			WeeklyStats:   make(map[string]*PeriodStats),
 			MonthlyStats:  make(map[string]*PeriodStats),
 		}
+
+		if err := globalStats.LoadFromFile(); err != nil {
+			fmt.Printf("⚠️ Failed to load stats: %v\n", err)
+		} else {
+			fmt.Printf("✅ Stats loaded: %d downloads\n", globalStats.TotalDownloads)
+		}
+
+		globalStats.StartAutoSave(5 * time.Minute)
 
 		if netStats, err := net.IOCounters(false); err == nil && len(netStats) > 0 {
 			globalStats.NetSentBaseline = netStats[0].BytesSent
@@ -240,4 +249,48 @@ func (s *BotStats) GetPeriodStats(period string) *PeriodStats {
 	}
 
 	return nil
+}
+
+const statsFilePath = "/app/data/stats.json"
+
+func (s *BotStats) SaveToFile() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if err := os.MkdirAll("/app/data", 0755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(statsFilePath, data, 0644)
+}
+
+func (s *BotStats) LoadFromFile() error {
+	data, err := os.ReadFile(statsFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return json.Unmarshal(data, s)
+}
+
+func (s *BotStats) StartAutoSave(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		for range ticker.C {
+			if err := s.SaveToFile(); err != nil {
+				fmt.Printf("⚠️ Failed to save stats: %v\n", err)
+			}
+		}
+	}()
 }

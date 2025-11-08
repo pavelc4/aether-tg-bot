@@ -25,7 +25,13 @@ func handleDownloadAudio(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 	start := time.Now()
 
-	filePaths, size, provider, err := downloader.DownloadAudioWithProgress(args, bot, msg.Chat.ID, processingMsg.MessageID)
+	filePaths, size, provider, err := downloader.DownloadAudioWithProgress(
+		args,
+		bot,
+		msg.Chat.ID,
+		processingMsg.MessageID,
+		msg.From.ID,
+	)
 	if err != nil {
 		errorText := fmt.Sprintf("❌ Download failed: %v", err)
 		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, processingMsg.MessageID, errorText)
@@ -62,7 +68,13 @@ func handleDownloadVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 	start := time.Now()
 
-	filePaths, size, provider, err := downloader.DownloadVideoWithProgress(args, bot, msg.Chat.ID, processingMsg.MessageID)
+	filePaths, size, provider, err := downloader.DownloadVideoWithProgress(
+		args,
+		bot,
+		msg.Chat.ID,
+		processingMsg.MessageID,
+		msg.From.ID,
+	)
 	if err != nil {
 		errorText := fmt.Sprintf("❌ Download failed: %v", err)
 		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, processingMsg.MessageID, errorText)

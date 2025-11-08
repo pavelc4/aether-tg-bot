@@ -41,8 +41,14 @@ WORKDIR /app
 
 COPY --from=builder --chown=appuser:appgroup /app/aether-bot .
 
+RUN mkdir -p /app/data && \
+    chown -R appuser:appgroup /app/data && \
+    chmod 755 /app/data
+
 RUN mkdir -p /tmp/aether && \
     chown -R appuser:appgroup /tmp/aether
+
+VOLUME ["/app/data"]
 
 USER appuser
 
