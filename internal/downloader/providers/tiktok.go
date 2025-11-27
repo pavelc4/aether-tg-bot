@@ -22,7 +22,7 @@ const (
 	tikTokTimeout  = 30 * time.Second
 	maxFilenameLen = 200
 	minAudioSize   = 5120
-	minVideoSize   = 102400 // 100KB minimum untuk video
+	minVideoSize   = 102400 // 100KB minimum for video
 )
 
 var (
@@ -72,19 +72,19 @@ func (tp *TikTokProvider) CanHandle(url string) bool {
 	return strings.Contains(url, "tiktok.com") || strings.Contains(url, "vt.tiktok.com")
 }
 
-// ✅ UPDATED: Support BOTH audio dan video
+// Support BOTH audio and video
 func (tp *TikTokProvider) Download(ctx context.Context, url string, audioOnly bool) ([]string, error) {
 	if audioOnly {
-		log.Printf("🎵 TikTok: Downloading AUDIO")
+		log.Printf(" TikTok: Downloading AUDIO")
 		return tp.downloadAudio(ctx, url)
 	} else {
-		log.Printf("📹 TikTok: Downloading VIDEO")
+		log.Printf(" TikTok: Downloading VIDEO")
 		return tp.downloadVideo(ctx, url)
 	}
 }
 
 func (tp *TikTokProvider) downloadVideo(ctx context.Context, url string) ([]string, error) {
-	log.Printf("📹 TikTok: Fetching video URL...")
+	log.Printf(" TikTok: Fetching video URL...")
 	response, err := tp.fetchVideoData(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("fetch video data failed: %w", err)
@@ -94,7 +94,8 @@ func (tp *TikTokProvider) downloadVideo(ctx context.Context, url string) ([]stri
 	videoURL := ""
 	if response.Data.VideoInfo.DownloadAddr != "" {
 		videoURL = response.Data.VideoInfo.DownloadAddr
-	} else if len(response.Data.Videos) > 0 && response.Data.Videos[0].DownloadAddr != "" {
+	}
+	if videoURL == "" && len(response.Data.Videos) > 0 {
 		videoURL = response.Data.Videos[0].DownloadAddr
 	}
 
@@ -113,18 +114,18 @@ func (tp *TikTokProvider) downloadVideo(ctx context.Context, url string) ([]stri
 		return nil, fmt.Errorf("download video file failed: %w", err)
 	}
 
-	log.Printf("✅ TikTok: Video downloaded: %s", filePath)
+	log.Printf(" TikTok: Video downloaded: %s", filePath)
 	return []string{filePath}, nil
 }
 
 func (tp *TikTokProvider) downloadAudio(ctx context.Context, url string) ([]string, error) {
-	log.Printf("🎵 TikTok: Fetching audio URL...")
+	log.Printf(" TikTok: Fetching audio URL...")
 	audioURL, title, author, err := tp.fetchAudioURL(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("fetch audio URL failed: %w", err)
 	}
 
-	log.Printf("🎵 TikTok: Title=%s, Author=%s", title, author)
+	log.Printf(" TikTok: Title=%s, Author=%s", title, author)
 
 	tmpDir, err := os.MkdirTemp("", "aether-tiktok-audio-")
 	if err != nil {
@@ -137,7 +138,7 @@ func (tp *TikTokProvider) downloadAudio(ctx context.Context, url string) ([]stri
 		return nil, fmt.Errorf("download audio file failed: %w", err)
 	}
 
-	log.Printf("✅ TikTok: Audio downloaded successfully: %s", filePath)
+	log.Printf(" TikTok: Audio downloaded successfully: %s", filePath)
 	return []string{filePath}, nil
 }
 

@@ -99,13 +99,14 @@ func (s *BotStats) RecordDownload(userID int64, platform, mediaType string, file
 		s.FailedDownloads++
 	}
 
-	switch mediaType {
-	case "Audio":
-		s.AudioDownloads++
-	case "Video":
-		s.VideoDownloads++
-	case "Image":
-		s.ImageDownloads++
+	incrementers := map[string]func(){
+		"Audio": func() { s.AudioDownloads++ },
+		"Video": func() { s.VideoDownloads++ },
+		"Image": func() { s.ImageDownloads++ },
+	}
+
+	if inc, ok := incrementers[mediaType]; ok {
+		inc()
 	}
 
 	s.UniqueUsers[userID] = true

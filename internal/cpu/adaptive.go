@@ -118,13 +118,11 @@ func (m *CPUBasedConnectionManager) MonitorCPUDuringDownload(ctx context.Context
 				m.currentCPU = percentages[0]
 				m.mu.Unlock()
 
+				msg := " CPU load: %.2f%%"
 				if m.currentCPU > 90 {
-					log.Printf(" HIGH CPU WARNING: %.2f%%", m.currentCPU)
-				} else if m.currentCPU > 75 {
-					log.Printf(" CPU load: %.2f%%", m.currentCPU)
-				} else {
-					log.Printf(" CPU load: %.2f%%", m.currentCPU)
+					msg = " HIGH CPU WARNING: %.2f%%"
 				}
+				log.Printf(msg, m.currentCPU)
 			}
 		}
 	}
