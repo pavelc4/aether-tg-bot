@@ -31,7 +31,7 @@ func GetCPUManager() CPUManager {
 func SetCPUManager(manager CPUManager) {
 	if manager != nil {
 		cpuManager = manager
-		log.Printf("✅ CPU Manager set: %T", manager)
+		log.Printf("CPU Manager set: %T", manager)
 	}
 }
 
@@ -57,5 +57,5 @@ func (m *SimpleCPUManager) GetOptimalConnections(ctx context.Context) int {
 }
 
 func (m *SimpleCPUManager) MonitorCPUDuringDownload(ctx context.Context, bot *tgbotapi.BotAPI, chatID int64, msgID int) {
-	log.Printf("📊 CPU monitoring (not implemented in SimpleCPUManager)")
+	log.Printf("CPU monitoring (not implemented in SimpleCPUManager)")
 }

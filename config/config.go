@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 )
 
@@ -37,47 +37,6 @@ const (
 	DefaultProcessingTimeout = 10
 )
 
-var (
-	botToken     string
-	botTokenOnce sync.Once
-
-	cobaltAPI     string
-	cobaltAPIOnce sync.Once
-
-	cobaltAPIKey     string
-	cobaltAPIKeyOnce sync.Once
-
-	ytdlpAPI     string
-	ytdlpAPIOnce sync.Once
-
-	ytdlpCookies     string
-	ytdlpCookiesOnce sync.Once
-
-	telegramAPI     string
-	telegramAPIOnce sync.Once
-
-	ownerID     int64
-	ownerIDOnce sync.Once
-
-	enableAdaptive     bool
-	enableAdaptiveOnce sync.Once
-
-	maxFileSize     int64
-	maxFileSizeOnce sync.Once
-
-	updateTimeout     int
-	updateTimeoutOnce sync.Once
-
-	workerPoolSize     int
-	workerPoolSizeOnce sync.Once
-
-	shutdownTimeout     time.Duration
-	shutdownTimeoutOnce sync.Once
-
-	processingTimeout     time.Duration
-	processingTimeoutOnce sync.Once
-)
-
 type Config struct {
 	BotToken          string
 	CobaltAPI         string
@@ -95,212 +54,148 @@ type Config struct {
 	ProcessingTimeout time.Duration
 }
 
-func GetBotToken() string {
-	botTokenOnce.Do(func() {
-		botToken = os.Getenv(EnvBotToken)
-		if botToken == "" {
-			log.Fatal(" BOT_TOKEN environment variable is required")
-		}
-	})
-	return botToken
-}
+var currentConfig *Config
 
-func GetCobaltAPI() string {
-	cobaltAPIOnce.Do(func() {
-		cobaltAPI = getEnvWithDefault(EnvCobaltAPI, DefaultCobaltAPI)
-		log.Printf(" Cobalt API: %s", cobaltAPI)
-	})
-	return cobaltAPI
-}
-
-func GetCobaltAPIKey() string {
-	cobaltAPIKeyOnce.Do(func() {
-		cobaltAPIKey = os.Getenv(EnvCobaltAPIKey)
-		if cobaltAPIKey != "" {
-			log.Printf(" Cobalt API Key: configured")
-		}
-	})
-	return cobaltAPIKey
-}
-
-func GetYtdlpAPI() string {
-	ytdlpAPIOnce.Do(func() {
-		ytdlpAPI = getEnvWithDefault(EnvYtdlpAPI, DefaultYtdlpAPI)
-		log.Printf(" yt-dlp API: %s", ytdlpAPI)
-	})
-	return ytdlpAPI
-}
-
-func GetYtdlpCookies() string {
-	ytdlpCookiesOnce.Do(func() {
-		ytdlpCookies = os.Getenv(EnvYtdlpCookies)
-		if ytdlpCookies != "" {
-			if _, err := os.Stat(ytdlpCookies); err == nil {
-				log.Printf(" yt-dlp Cookies: %s", ytdlpCookies)
-			} else {
-				log.Printf("  Cookie file not found: %s", ytdlpCookies)
-				ytdlpCookies = ""
-			}
-		}
-	})
-	return ytdlpCookies
-}
-
-func GetTelegramApiURL() string {
-	telegramAPIOnce.Do(func() {
-		telegramAPI = getEnvWithDefault(EnvTelegramAPI, DefaultTelegramAPI)
-		log.Printf(" Telegram API: %s", telegramAPI)
-	})
-	return telegramAPI
-}
-
-func GetOwnerID() int64 {
-	ownerIDOnce.Do(func() {
-		ownerStr := os.Getenv(EnvOwnerID)
-		if ownerStr == "" {
-			log.Println("  OWNER_ID not set. Admin commands will be disabled.")
-			ownerID = 0
-			return
-		}
-
-		id, err := strconv.ParseInt(ownerStr, 10, 64)
-		if err != nil {
-			log.Printf("  Invalid OWNER_ID '%s': %v. Admin commands will be disabled.", ownerStr, err)
-			ownerID = 0
-			return
-		}
-
-		ownerID = id
-		log.Printf(" Owner ID: %d", ownerID)
-	})
-	return ownerID
-}
-
-func GetEnableAdaptive() bool {
-	enableAdaptiveOnce.Do(func() {
-		envVal := os.Getenv(EnvEnableAdaptive)
-		if envVal == "" {
-			enableAdaptive = DefaultEnableAdaptive
-		} else {
-			enableAdaptive = envVal == "true" || envVal == "1"
-		}
-		log.Printf(" Adaptive Download: %v", enableAdaptive)
-	})
-	return enableAdaptive
-}
-
-func GetMaxFileSize() int64 {
-	maxFileSizeOnce.Do(func() {
-		envVal := os.Getenv(EnvMaxFileSize)
-		if envVal == "" {
-			maxFileSize = DefaultMaxFileSize * 1024 * 1024
-		} else {
-			sizeMB, err := strconv.ParseInt(envVal, 10, 64)
-			if err != nil || sizeMB <= 0 {
-				log.Printf("  Invalid MAX_FILE_SIZE_MB '%s', using default: %d MB", envVal, DefaultMaxFileSize)
-				maxFileSize = DefaultMaxFileSize * 1024 * 1024
-			} else {
-				maxFileSize = sizeMB * 1024 * 1024
-			}
-		}
-		log.Printf(" Max File Size: %d MB", maxFileSize/(1024*1024))
-	})
-	return maxFileSize
-}
-
-func GetUpdateTimeout() int {
-	updateTimeoutOnce.Do(func() {
-		envVal := os.Getenv(EnvUpdateTimeout)
-		if envVal == "" {
-			updateTimeout = DefaultUpdateTimeout
-		} else {
-			timeout, err := strconv.Atoi(envVal)
-			if err != nil || timeout <= 0 {
-				log.Printf("  Invalid UPDATE_TIMEOUT '%s', using default: %d", envVal, DefaultUpdateTimeout)
-				updateTimeout = DefaultUpdateTimeout
-			} else {
-				updateTimeout = timeout
-			}
-		}
-		log.Printf(" Update Timeout: %d seconds", updateTimeout)
-	})
-	return updateTimeout
-}
-
-func GetWorkerPoolSize() int {
-	workerPoolSizeOnce.Do(func() {
-		envVal := os.Getenv(EnvWorkerPoolSize)
-		if envVal == "" {
-			workerPoolSize = DefaultWorkerPoolSize
-		} else {
-			size, err := strconv.Atoi(envVal)
-			if err != nil || size <= 0 {
-				log.Printf("  Invalid WORKER_POOL_SIZE '%s', using default: %d", envVal, DefaultWorkerPoolSize)
-				workerPoolSize = DefaultWorkerPoolSize
-			} else {
-				workerPoolSize = size
-			}
-		}
-		log.Printf(" Worker Pool Size: %d", workerPoolSize)
-	})
-	return workerPoolSize
-}
-
-func GetShutdownTimeout() time.Duration {
-	shutdownTimeoutOnce.Do(func() {
-		envVal := os.Getenv(EnvShutdownTimeout)
-		if envVal == "" {
-			shutdownTimeout = time.Duration(DefaultShutdownTimeout) * time.Second
-		} else {
-			seconds, err := strconv.Atoi(envVal)
-			if err != nil || seconds <= 0 {
-				log.Printf("  Invalid SHUTDOWN_TIMEOUT_SECONDS '%s', using default: %d", envVal, DefaultShutdownTimeout)
-				shutdownTimeout = time.Duration(DefaultShutdownTimeout) * time.Second
-			} else {
-				shutdownTimeout = time.Duration(seconds) * time.Second
-			}
-		}
-		log.Printf(" Shutdown Timeout: %v", shutdownTimeout)
-	})
-	return shutdownTimeout
-}
-
-func GetProcessingTimeout() time.Duration {
-	processingTimeoutOnce.Do(func() {
-		envVal := os.Getenv(EnvProcessingTimeout)
-		if envVal == "" {
-			processingTimeout = time.Duration(DefaultProcessingTimeout) * time.Minute
-		} else {
-			minutes, err := strconv.Atoi(envVal)
-			if err != nil || minutes <= 0 {
-				log.Printf("  Invalid PROCESSING_TIMEOUT_MINUTES '%s', using default: %d", envVal, DefaultProcessingTimeout)
-				processingTimeout = time.Duration(DefaultProcessingTimeout) * time.Minute
-			} else {
-				processingTimeout = time.Duration(minutes) * time.Minute
-			}
-		}
-		log.Printf(" Processing Timeout: %v", processingTimeout)
-	})
-	return processingTimeout
+func init() {
+	LoadConfig()
 }
 
 func LoadConfig() *Config {
-	return &Config{
-		BotToken:          GetBotToken(),
-		CobaltAPI:         GetCobaltAPI(),
-		CobaltAPIKey:      GetCobaltAPIKey(),
-		YtdlpAPI:          GetYtdlpAPI(),
-		YtdlpCookies:      GetYtdlpCookies(),
-		TelegramAPI:       GetTelegramApiURL(),
-		OwnerID:           GetOwnerID(),
-		EnableAdaptive:    GetEnableAdaptive(),
-		MaxFileSizeMB:     GetMaxFileSize() / (1024 * 1024),
-		MaxFileSizeBytes:  GetMaxFileSize(),
-		UpdateTimeout:     GetUpdateTimeout(),
-		WorkerPoolSize:    GetWorkerPoolSize(),
-		ShutdownTimeout:   GetShutdownTimeout(),
-		ProcessingTimeout: GetProcessingTimeout(),
+	cfg := &Config{
+		BotToken:          os.Getenv(EnvBotToken),
+		CobaltAPI:         getEnvWithDefault(EnvCobaltAPI, DefaultCobaltAPI),
+		CobaltAPIKey:      os.Getenv(EnvCobaltAPIKey),
+		YtdlpAPI:          getEnvWithDefault(EnvYtdlpAPI, DefaultYtdlpAPI),
+		YtdlpCookies:      os.Getenv(EnvYtdlpCookies),
+		TelegramAPI:       getEnvWithDefault(EnvTelegramAPI, DefaultTelegramAPI),
+		EnableAdaptive:    getBoolEnv(EnvEnableAdaptive, DefaultEnableAdaptive),
+		UpdateTimeout:     getIntEnv(EnvUpdateTimeout, DefaultUpdateTimeout),
+		WorkerPoolSize:    getIntEnv(EnvWorkerPoolSize, DefaultWorkerPoolSize),
+		ShutdownTimeout:   getDurationEnv(EnvShutdownTimeout, DefaultShutdownTimeout, time.Second),
+		ProcessingTimeout: getDurationEnv(EnvProcessingTimeout, DefaultProcessingTimeout, time.Minute),
 	}
+
+	// Owner ID
+	if ownerStr := os.Getenv(EnvOwnerID); ownerStr != "" {
+		if id, err := strconv.ParseInt(ownerStr, 10, 64); err == nil {
+			cfg.OwnerID = id
+		} else {
+			log.Printf("Invalid OWNER_ID '%s': %v", ownerStr, err)
+		}
+	}
+
+	// Max File Size
+	if sizeStr := os.Getenv(EnvMaxFileSize); sizeStr != "" {
+		if sizeMB, err := strconv.ParseInt(sizeStr, 10, 64); err == nil && sizeMB > 0 {
+			cfg.MaxFileSizeMB = sizeMB
+		} else {
+			cfg.MaxFileSizeMB = DefaultMaxFileSize
+		}
+	} else {
+		cfg.MaxFileSizeMB = DefaultMaxFileSize
+	}
+	cfg.MaxFileSizeBytes = cfg.MaxFileSizeMB * 1024 * 1024
+
+	if cfg.YtdlpCookies != "" {
+		if _, err := os.Stat(cfg.YtdlpCookies); err != nil {
+			log.Printf("Cookie file not found: %s", cfg.YtdlpCookies)
+			cfg.YtdlpCookies = ""
+		}
+	}
+
+	currentConfig = cfg
+	return cfg
+}
+
+func GetBotToken() string {
+	if currentConfig == nil {
+		return os.Getenv(EnvBotToken)
+	}
+	return currentConfig.BotToken
+}
+
+func GetCobaltAPI() string {
+	if currentConfig == nil {
+		return DefaultCobaltAPI
+	}
+	return currentConfig.CobaltAPI
+}
+
+func GetCobaltAPIKey() string {
+	if currentConfig == nil {
+		return ""
+	}
+	return currentConfig.CobaltAPIKey
+}
+
+func GetYtdlpAPI() string {
+	if currentConfig == nil {
+		return DefaultYtdlpAPI
+	}
+	return currentConfig.YtdlpAPI
+}
+
+func GetYtdlpCookies() string {
+	if currentConfig == nil {
+		return ""
+	}
+	return currentConfig.YtdlpCookies
+}
+
+func GetTelegramApiURL() string {
+	if currentConfig == nil {
+		return DefaultTelegramAPI
+	}
+	return currentConfig.TelegramAPI
+}
+
+func GetOwnerID() int64 {
+	if currentConfig == nil {
+		return 0
+	}
+	return currentConfig.OwnerID
+}
+
+func GetEnableAdaptive() bool {
+	if currentConfig == nil {
+		return DefaultEnableAdaptive
+	}
+	return currentConfig.EnableAdaptive
+}
+
+func GetMaxFileSize() int64 {
+	if currentConfig == nil {
+		return DefaultMaxFileSize * 1024 * 1024
+	}
+	return currentConfig.MaxFileSizeBytes
+}
+
+func GetUpdateTimeout() int {
+	if currentConfig == nil {
+		return DefaultUpdateTimeout
+	}
+	return currentConfig.UpdateTimeout
+}
+
+func GetWorkerPoolSize() int {
+	if currentConfig == nil {
+		return DefaultWorkerPoolSize
+	}
+	return currentConfig.WorkerPoolSize
+}
+
+func GetShutdownTimeout() time.Duration {
+	if currentConfig == nil {
+		return time.Duration(DefaultShutdownTimeout) * time.Second
+	}
+	return currentConfig.ShutdownTimeout
+}
+
+func GetProcessingTimeout() time.Duration {
+	if currentConfig == nil {
+		return time.Duration(DefaultProcessingTimeout) * time.Minute
+	}
+	return currentConfig.ProcessingTimeout
 }
 
 func ValidateConfig() error {
@@ -323,34 +218,16 @@ func ValidateConfig() error {
 	}
 
 	log.Println(" Configuration loaded successfully:")
-	log.Printf("   Cobalt API: %s", GetCobaltAPI())
-	log.Printf("   yt-dlp API: %s", GetYtdlpAPI())
-	log.Printf("   Telegram API: %s", GetTelegramApiURL())
-
-	if GetCobaltAPIKey() != "" {
-		log.Printf("   Cobalt API Key: configured")
-	}
-
-	if GetYtdlpCookies() != "" {
-		log.Printf("   yt-dlp Cookies: %s", GetYtdlpCookies())
-	}
-
-	if GetOwnerID() != 0 {
-		log.Printf("   Owner ID: %d", GetOwnerID())
-	}
-
-	log.Printf("   Adaptive Download: %v", GetEnableAdaptive())
-	log.Printf("   Max File Size: %d MB", GetMaxFileSize()/(1024*1024))
-	log.Printf("   Update Timeout: %d seconds", GetUpdateTimeout())
-	log.Printf("   Worker Pool Size: %d", GetWorkerPoolSize())
-	log.Printf("   Shutdown Timeout: %v", GetShutdownTimeout())
-	log.Printf("   Processing Timeout: %v", GetProcessingTimeout())
+	PrintConfig()
 
 	return nil
 }
 
 func PrintConfig() {
-	cfg := LoadConfig()
+	cfg := currentConfig
+	if cfg == nil {
+		cfg = LoadConfig()
+	}
 
 	log.Println("📋 Current Configuration:")
 	log.Printf("  Bot Token: %s", maskToken(cfg.BotToken))
@@ -367,6 +244,12 @@ func PrintConfig() {
 	log.Printf("  Shutdown Timeout: %v", cfg.ShutdownTimeout)
 	log.Printf("  Processing Timeout: %v", cfg.ProcessingTimeout)
 }
+func ReloadConfig() {
+	log.Println("🔄 Reloading configuration...")
+	LoadConfig()
+	time.Sleep(100 * time.Millisecond)
+	log.Println(" Configuration reloaded")
+}
 
 func getEnvWithDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
@@ -375,12 +258,37 @@ func getEnvWithDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
+func getIntEnv(key string, defaultValue int) int {
+	if valStr := os.Getenv(key); valStr != "" {
+		if val, err := strconv.Atoi(valStr); err == nil && val > 0 {
+			return val
+		}
+	}
+	return defaultValue
+}
+
+func getBoolEnv(key string, defaultValue bool) bool {
+	if valStr := os.Getenv(key); valStr != "" {
+		return valStr == "true" || valStr == "1"
+	}
+	return defaultValue
+}
+
+func getDurationEnv(key string, defaultValue int, unit time.Duration) time.Duration {
+	if valStr := os.Getenv(key); valStr != "" {
+		if val, err := strconv.Atoi(valStr); err == nil && val > 0 {
+			return time.Duration(val) * unit
+		}
+	}
+	return time.Duration(defaultValue) * unit
+}
+
 func validateURL(urlStr, name string) error {
 	if urlStr == "" {
 		return fmt.Errorf("%s cannot be empty", name)
 	}
 
-	if urlStr[:4] != "http" {
+	if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
 		return fmt.Errorf("%s must start with http:// or https://: %s", name, urlStr)
 	}
 
@@ -397,26 +305,4 @@ func maskToken(token string) string {
 	}
 
 	return token[:4] + "..." + token[len(token)-4:]
-}
-
-func ReloadConfig() {
-	log.Println("🔄 Reloading configuration...")
-
-	botTokenOnce = sync.Once{}
-	cobaltAPIOnce = sync.Once{}
-	cobaltAPIKeyOnce = sync.Once{}
-	ytdlpAPIOnce = sync.Once{}
-	ytdlpCookiesOnce = sync.Once{}
-	telegramAPIOnce = sync.Once{}
-	ownerIDOnce = sync.Once{}
-	enableAdaptiveOnce = sync.Once{}
-	maxFileSizeOnce = sync.Once{}
-	updateTimeoutOnce = sync.Once{}
-	workerPoolSizeOnce = sync.Once{}
-	shutdownTimeoutOnce = sync.Once{}
-	processingTimeoutOnce = sync.Once{}
-
-	time.Sleep(100 * time.Millisecond)
-
-	log.Println(" Configuration reloaded")
 }

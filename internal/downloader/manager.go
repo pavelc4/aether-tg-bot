@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/pavelc4/aether-tg-bot/internal/downloader/providers"
@@ -12,75 +13,56 @@ import (
 )
 
 func DownloadAudioWithProgress(url string, bot *tgbotapi.BotAPI, chatID int64, msgID int, userID int64) ([]string, int64, string, error) {
-	log.Printf("DownloadAudioWithProgress: %s (user: %d)", url, userID)
-
-	filePaths, provider, err := downloadWithProviders(url, true)
-	if err != nil {
-		stats.GetStats().RecordDownload(userID, "Unknown", "Audio", 0, 0, false)
-		return nil, 0, "", fmt.Errorf("audio download failed: %w", err)
-	}
-
-	size := getTotalSize(filePaths)
-	stats.GetStats().RecordDownload(userID, provider, "Audio", len(filePaths), size, true)
-
-	return filePaths, size, provider, nil
+	return downloadMedia(url, true, bot, chatID, msgID, "", userID)
 }
 
+// DownloadVideoWithProgress downloads video from the given URL.
 func DownloadVideoWithProgress(url string, bot *tgbotapi.BotAPI, chatID int64, msgID int, userID int64) ([]string, int64, string, error) {
-	log.Printf("DownloadVideoWithProgress: %s (user: %d)", url, userID)
-
-	filePaths, provider, err := downloadWithProviders(url, false)
-	if err != nil {
-		stats.GetStats().RecordDownload(userID, "Unknown", "Video", 0, 0, false)
-		return nil, 0, "", fmt.Errorf("video download failed: %w", err)
-	}
-	size := getTotalSize(filePaths)
-	stats.GetStats().RecordDownload(userID, provider, "Video", len(filePaths), size, true)
-	return filePaths, size, provider, nil
+	return downloadMedia(url, false, bot, chatID, msgID, "", userID)
 }
 
+// DownloadVideoWithProgressDetailed downloads video with detailed progress updates (e.g. for YouTube).
 func DownloadVideoWithProgressDetailed(url string, bot *tgbotapi.BotAPI, chatID int64, msgID int, username string, userID int64) ([]string, int64, string, error) {
-	log.Printf("DownloadVideoWithProgressDetailed: %s (user: %s/%d)", url, username, userID)
+	return downloadMedia(url, false, bot, chatID, msgID, username, userID)
+}
 
-	if isYouTubeURL(url) {
+// downloadMedia is the unified function for downloading media.
+func downloadMedia(url string, audioOnly bool, bot *tgbotapi.BotAPI, chatID int64, msgID int, username string, userID int64) ([]string, int64, string, error) {
+	mediaType := "Video"
+	if audioOnly {
+		mediaType = "Audio"
+	}
+	log.Printf("DownloadMedia: %s (type=%s, user=%d)", url, mediaType, userID)
+
+	// Special handling for YouTube if we have username (implies detailed progress)
+	if !audioOnly && isYouTubeURL(url) && username != "" {
 		provider := providers.NewYouTubeProviderWithProgress(true, bot, chatID, msgID, username)
 		filePaths, err := provider.Download(context.Background(), url, false)
 		if err == nil && len(filePaths) > 0 {
 			size := getTotalSize(filePaths)
-			stats.GetStats().RecordDownload(userID, provider.Name(), "Video", len(filePaths), size, true)
-
+			stats.GetStats().RecordDownload(userID, provider.Name(), mediaType, len(filePaths), size, true)
 			return filePaths, size, provider.Name(), nil
 		}
+		// Fallback to standard providers if specific YouTube provider fails
+		log.Printf("YouTube specific provider failed, falling back to standard providers: %v", err)
 	}
 
-	filePaths, provider, err := downloadWithProviders(url, false)
-	if err != nil {
-		stats.GetStats().RecordDownload(userID, "Unknown", "Video", 0, 0, false)
-		return nil, 0, "", fmt.Errorf("video download failed: %w", err)
-	}
-
-	size := getTotalSize(filePaths)
-	stats.GetStats().RecordDownload(userID, provider, "Video", len(filePaths), size, true)
-
-	return filePaths, size, provider, nil
-}
-
-func downloadWithProviders(url string, audioOnly bool) ([]string, string, error) {
-	ctx := context.Background()
+	// Standard provider list
 	providersList := []providers.Provider{
 		providers.NewCobaltProvider(),
 		providers.NewTikTokProvider(),
 		providers.NewYouTubeProvider(true),
 	}
 
+	ctx := context.Background()
 	var lastErr error
+
 	for _, provider := range providersList {
 		if !provider.CanHandle(url) {
-			log.Printf("%s: Can't handle URL", provider.Name())
 			continue
 		}
 
-		log.Printf("Trying %s provider", provider.Name())
+		log.Printf("Trying %s provider (audioOnly=%v)", provider.Name(), audioOnly)
 
 		filePaths, err := provider.Download(ctx, url, audioOnly)
 		if err != nil {
@@ -94,15 +76,23 @@ func downloadWithProviders(url string, audioOnly bool) ([]string, string, error)
 			continue
 		}
 
+		size := getTotalSize(filePaths)
 		log.Printf("%s: Successfully downloaded %d file(s)", provider.Name(), len(filePaths))
-		return filePaths, provider.Name(), nil
+		stats.GetStats().RecordDownload(userID, provider.Name(), mediaType, len(filePaths), size, true)
+
+		return filePaths, size, provider.Name(), nil
 	}
 
+	stats.GetStats().RecordDownload(userID, "Unknown", mediaType, 0, 0, false)
 	if lastErr != nil {
-		return nil, "", lastErr
+		return nil, 0, "", lastErr
 	}
+	return nil, 0, "", fmt.Errorf("no suitable provider found or all failed")
+}
 
-	return nil, "", fmt.Errorf("no suitable provider found for URL: %s", url)
+// UniversalDownload is kept for backward compatibility or direct usage, simply calling downloadMedia.
+func UniversalDownload(url string, audioOnly bool, userID int64) ([]string, int64, string, error) {
+	return downloadMedia(url, audioOnly, nil, 0, 0, "", userID)
 }
 
 func getTotalSize(filePaths []string) int64 {
@@ -115,52 +105,6 @@ func getTotalSize(filePaths []string) int64 {
 	return total
 }
 
-func UniversalDownload(url string, audioOnly bool, userID int64) ([]string, int64, string, error) {
-	ctx := context.Background()
-
-	providersList := []providers.Provider{
-		providers.NewCobaltProvider(),
-		providers.NewTikTokProvider(),
-		providers.NewYouTubeProvider(true),
-	}
-
-	mediaType := "Video"
-	if audioOnly {
-		mediaType = "Audio"
-	}
-
-	for _, provider := range providersList {
-		if !provider.CanHandle(url) {
-			continue
-		}
-
-		log.Printf("Trying %s provider (audioOnly=%v)", provider.Name(), audioOnly)
-
-		filePaths, err := provider.Download(ctx, url, audioOnly)
-		if err == nil && len(filePaths) > 0 {
-			size := getTotalSize(filePaths)
-			log.Printf("%s: Downloaded %d file(s)", provider.Name(), len(filePaths))
-
-			stats.GetStats().RecordDownload(userID, provider.Name(), mediaType, len(filePaths), size, true)
-
-			return filePaths, size, provider.Name(), nil
-		}
-	}
-
-	stats.GetStats().RecordDownload(userID, "Unknown", mediaType, 0, 0, false)
-
-	return nil, 0, "", fmt.Errorf("download failed")
-}
-
 func isYouTubeURL(url string) bool {
-	return (url != "") && (containsString(url, "youtube.com") || containsString(url, "youtu.be"))
-}
-
-func containsString(s, substr string) bool {
-	for i := 0; i < len(s)-len(substr)+1; i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return (url != "") && (strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be"))
 }

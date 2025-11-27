@@ -162,7 +162,7 @@ func UpdateInitialProgressMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int,
 
 func UpdateUploadProgressMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int, fileName string, uploadProgress UploadProgress, username string) {
 	if bot == nil {
-		log.Printf("⚠️ [Upload] bot is nil, skipping update")
+		log.Printf("bot is nil, skipping update")
 		return
 	}
 
@@ -185,7 +185,7 @@ func UpdateUploadProgressMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int, 
 	edit := tgbotapi.NewEditMessageText(chatID, msgID, text)
 	if _, err := bot.Send(edit); err != nil {
 		if !strings.Contains(err.Error(), "message is not modified") {
-			log.Printf("⚠️ [Upload] Update failed: %v", err)
+			log.Printf("Update failed: %v", err)
 		}
 	}
 }
@@ -209,6 +209,6 @@ func UpdateUploadCompleteMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int, 
 
 	edit := tgbotapi.NewEditMessageText(chatID, msgID, text)
 	if _, err := bot.Send(edit); err != nil {
-		log.Printf("⚠️ [Upload] Failed to update complete message: %v", err)
+		log.Printf("Failed to update complete message: %v", err)
 	}
 }

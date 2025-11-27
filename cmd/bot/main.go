@@ -26,5 +26,5 @@ func main() {
 	}()
 
 	<-sigChan
-	log.Println("👋 Shutting down...")
+	log.Println("Shutting down...")
 }

@@ -38,16 +38,26 @@ type cobaltAPIResponse struct {
 }
 
 type CobaltProvider struct {
-	timeout time.Duration
-	client  *http.Client
+	timeout  time.Duration
+	client   *http.Client
+	handlers map[string]responseHandler
 }
 
 func NewCobaltProvider() *CobaltProvider {
-	return &CobaltProvider{
+	cp := &CobaltProvider{
 		timeout: cobaltTimeout,
 		client:  httpclient.GetDownloadClient(),
 	}
+	cp.handlers = map[string]responseHandler{
+		"tunnel":   cp.handleTunnelRedirect,
+		"redirect": cp.handleTunnelRedirect,
+		"picker":   cp.handlePicker,
+		"error":    cp.handleError,
+	}
+	return cp
 }
+
+type responseHandler func(context.Context, *cobaltAPIResponse) ([]string, error)
 
 func (cp *CobaltProvider) Name() string {
 	return "Cobalt"
@@ -117,16 +127,14 @@ func (cp *CobaltProvider) requestAPI(ctx context.Context, mediaURL string, audio
 }
 
 func (cp *CobaltProvider) processResponse(ctx context.Context, response *cobaltAPIResponse) ([]string, error) {
-	switch response.Status {
-	case "tunnel", "redirect":
-		return cp.handleTunnelRedirect(ctx, response)
-	case "picker":
-		return cp.handlePicker(ctx, response)
-	case "error":
-		return nil, fmt.Errorf("cobalt error: %s", response.Error.Code)
-	default:
-		return nil, fmt.Errorf("unknown cobalt status: %s", response.Status)
+	if handler, exists := cp.handlers[response.Status]; exists {
+		return handler(ctx, response)
 	}
+	return nil, fmt.Errorf("unknown cobalt status: %s", response.Status)
+}
+
+func (cp *CobaltProvider) handleError(ctx context.Context, response *cobaltAPIResponse) ([]string, error) {
+	return nil, fmt.Errorf("cobalt error: %s", response.Error.Code)
 }
 
 func (cp *CobaltProvider) handleTunnelRedirect(ctx context.Context, response *cobaltAPIResponse) ([]string, error) {

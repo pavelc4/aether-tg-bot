@@ -30,7 +30,7 @@ func NewAdaptiveManager() *CPUBasedConnectionManager {
 		enabled:        os.Getenv("ADAPTIVE_ARIA2") != "false",
 	}
 
-	log.Printf("✅ Adaptive CPU Manager initialized (enabled=%v, min=%d, max=%d)",
+	log.Printf("Adaptive CPU Manager initialized (enabled=%v, min=%d, max=%d)",
 		manager.enabled, manager.minConnections, manager.maxConnections)
 
 	return manager
@@ -42,13 +42,13 @@ func (m *CPUBasedConnectionManager) IsEnabled() bool {
 
 func (m *CPUBasedConnectionManager) GetOptimalConnections(ctx context.Context) int {
 	if !m.enabled {
-		log.Println("⚙️ Adaptive aria2c disabled, using default 8 connections")
+		log.Println("Adaptive aria2c disabled, using default 8 connections")
 		return 8
 	}
 
 	percentages, err := gocpu.PercentWithContext(ctx, time.Second, false)
 	if err != nil || len(percentages) == 0 {
-		log.Printf("⚠️ Failed to get CPU usage, using default: %v", err)
+		log.Printf("Failed to get CPU usage, using default: %v", err)
 		return 8
 	}
 
@@ -95,7 +95,7 @@ func (m *CPUBasedConnectionManager) GetCurrentCPU() float64 {
 func (m *CPUBasedConnectionManager) SetEnabled(enabled bool) {
 	m.enabled = enabled
 	status := map[bool]string{true: "enabled", false: "disabled"}[enabled]
-	log.Printf("⚙️ Adaptive aria2c %s", status)
+	log.Printf("Adaptive aria2c %s", status)
 }
 
 func (m *CPUBasedConnectionManager) MonitorCPUDuringDownload(ctx context.Context, bot *tgbotapi.BotAPI, chatID int64, msgID int) {
@@ -109,7 +109,7 @@ func (m *CPUBasedConnectionManager) MonitorCPUDuringDownload(ctx context.Context
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("⏹️ CPU monitoring stopped")
+			log.Println("CPU monitoring stopped")
 			return
 		case <-ticker.C:
 			percentages, err := gocpu.PercentWithContext(ctx, time.Second, false)
@@ -159,7 +159,7 @@ func (m *CPUBasedConnectionManager) BuildAria2Args(ctx context.Context) string {
 		connections, connections,
 	)
 
-	log.Printf("🔧 Aria2c args: %s", args)
+	log.Printf("Aria2c args: %s", args)
 	return args
 }
 

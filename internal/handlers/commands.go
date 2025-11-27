@@ -81,7 +81,7 @@ func handleHelp(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 func handleSpeedTest(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	if !isOwner(msg.From.ID) {
 		sendText(bot, msg.Chat.ID, "❌ This command is only available to the bot owner.")
-		log.Printf("⚠️ Unauthorized speedtest attempt by user %d (%s)", msg.From.ID, msg.From.UserName)
+		log.Printf("Unauthorized speedtest attempt by user %d (%s)", msg.From.ID, msg.From.UserName)
 		return
 	}
 
