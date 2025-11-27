@@ -11,69 +11,51 @@ import (
 )
 
 func handleDownloadGeneric(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	handleDownloadVideo(bot, msg)
+	handleDownload(bot, msg, false)
 }
 
 func handleDownloadAudio(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	args := strings.TrimSpace(msg.CommandArguments())
-	if args == "" {
-		sendText(bot, msg.Chat.ID, "❌ Usage: /mp [URL]")
-		return
-	}
-
-	processingMsg, _ := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Downloading audio..."))
-
-	start := time.Now()
-
-	filePaths, size, provider, err := downloader.DownloadAudioWithProgress(
-		args,
-		bot,
-		msg.Chat.ID,
-		processingMsg.MessageID,
-		msg.From.ID,
-	)
-	if err != nil {
-		errorText := fmt.Sprintf("❌ Download failed: %v", err)
-		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, processingMsg.MessageID, errorText)
-		bot.Send(edit)
-		return
-	}
-
-	log.Printf(" Downloaded audio via %s: %d files, %.2f MB", provider, len(filePaths), float64(size)/(1024*1024))
-
-	defer downloader.CleanupTempFiles(filePaths)
-
-	source := DetectSource(args)
-	duration := time.Since(start)
-	username := msg.From.UserName
-	if username == "" {
-		username = msg.From.FirstName
-	}
-
-	caption := BuildMediaCaption(source, args, "Audio", size, duration, username)
-
-	sendMediaGroupWithProgress(bot, msg.Chat.ID, filePaths, caption, false, processingMsg.MessageID, username)
-
+	handleDownload(bot, msg, true)
 }
 
 func handleDownloadVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
+	handleDownload(bot, msg, false)
+}
+
+func handleDownload(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, audioOnly bool) {
 	args := strings.TrimSpace(msg.CommandArguments())
 	if args == "" {
-		sendText(bot, msg.Chat.ID, "❌ Usage: /video [URL]")
+		cmd := "/video"
+		if audioOnly {
+			cmd = "/mp"
+		}
+		sendText(bot, msg.Chat.ID, fmt.Sprintf("❌ Usage: %s [URL]", cmd))
 		return
 	}
 
-	processingMsg, _ := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "⏳ Downloading video..."))
+	mediaType := "video"
+	if audioOnly {
+		mediaType = "audio"
+	}
+
+	processingMsg, _ := bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("⏳ Downloading %s...", mediaType)))
 
 	start := time.Now()
+	var filePaths []string
+	var size int64
+	var provider string
+	var err error
 
-	filePaths, size, provider, err := downloader.DownloadVideoWithProgress(
-		args,
-		bot,
-		msg.Chat.ID,
-		processingMsg.MessageID,
-		msg.From.ID,
-	)
+	if audioOnly {
+		filePaths, size, provider, err = downloader.DownloadAudioWithProgress(
+			args, bot, msg.Chat.ID, processingMsg.MessageID, msg.From.ID,
+		)
+	} else {
+		filePaths, size, provider, err = downloader.DownloadVideoWithProgress(
+			args, bot, msg.Chat.ID, processingMsg.MessageID, msg.From.ID,
+		)
+	}
+
 	if err != nil {
 		errorText := fmt.Sprintf("❌ Download failed: %v", err)
 		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, processingMsg.MessageID, errorText)
@@ -81,7 +63,7 @@ func handleDownloadVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		return
 	}
 
-	log.Printf(" Downloaded video via %s: %d files, %.2f MB", provider, len(filePaths), float64(size)/(1024*1024))
+	log.Printf(" Downloaded %s via %s: %d files, %.2f MB", mediaType, provider, len(filePaths), float64(size)/(1024*1024))
 
 	defer downloader.CleanupTempFiles(filePaths)
 
@@ -92,7 +74,11 @@ func handleDownloadVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		username = msg.From.FirstName
 	}
 
-	caption := BuildMediaCaption(source, args, "Video", size, duration, username)
+	captionType := "Video"
+	if audioOnly {
+		captionType = "Audio"
+	}
+	caption := BuildMediaCaption(source, args, captionType, size, duration, username)
 
-	sendMediaGroupWithProgress(bot, msg.Chat.ID, filePaths, caption, true, processingMsg.MessageID, username)
+	sendMediaGroupWithProgress(bot, msg.Chat.ID, filePaths, caption, !audioOnly, processingMsg.MessageID, username)
 }

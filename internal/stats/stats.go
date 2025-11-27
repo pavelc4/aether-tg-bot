@@ -234,18 +234,15 @@ func (s *BotStats) GetPeriodStats(period string) *PeriodStats {
 	defer s.mu.RUnlock()
 
 	now := time.Now()
-	var key string
 
-	switch period {
-	case "today":
-		key = now.Format("2006-01-02")
-		return s.DailyStats[key]
-	case "week":
-		key = now.Format("2006-W") + getWeekNumber(now)
-		return s.WeeklyStats[key]
-	case "month":
-		key = now.Format("2006-01")
-		return s.MonthlyStats[key]
+	strategies := map[string]func() *PeriodStats{
+		"today": func() *PeriodStats { return s.DailyStats[now.Format("2006-01-02")] },
+		"week":  func() *PeriodStats { return s.WeeklyStats[now.Format("2006-W")+getWeekNumber(now)] },
+		"month": func() *PeriodStats { return s.MonthlyStats[now.Format("2006-01")] },
+	}
+
+	if strategy, exists := strategies[period]; exists {
+		return strategy()
 	}
 
 	return nil

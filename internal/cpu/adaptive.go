@@ -134,15 +134,19 @@ func (m *CPUBasedConnectionManager) GetCPUStats() string {
 	cpu := m.GetCurrentCPU()
 	connections := m.calculateConnections(cpu)
 
-	status := "Normal"
-	if cpu > 85 {
-		status = "Critical"
-	} else if cpu > 70 {
-		status = "High"
-	} else if cpu > 40 {
-		status = "Medium"
-	} else {
-		status = "Low"
+	statusMap := map[float64]string{
+		85: "Critical",
+		70: "High",
+		40: "Medium",
+	}
+	order := []float64{85, 70, 40}
+
+	status := "Low"
+	for _, t := range order {
+		if cpu > t {
+			status = statusMap[t]
+			break
+		}
 	}
 
 	return fmt.Sprintf("CPU: %.1f%% (%s) | Connections: %d", cpu, status, connections)

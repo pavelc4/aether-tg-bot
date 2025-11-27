@@ -27,16 +27,21 @@ func FormatFileSize(size int64) string {
 		MB = KB * 1024
 		GB = MB * 1024
 	)
-	switch {
-	case size >= GB:
-		return fmt.Sprintf("%.2f GB", float64(size)/GB)
-	case size >= MB:
-		return fmt.Sprintf("%.2f MB", float64(size)/MB)
-	case size >= KB:
-		return fmt.Sprintf("%.2f KB", float64(size)/KB)
-	default:
-		return fmt.Sprintf("%d B", size)
+	units := []struct {
+		threshold int64
+		suffix    string
+	}{
+		{GB, "GB"},
+		{MB, "MB"},
+		{KB, "KB"},
 	}
+
+	for _, u := range units {
+		if size >= u.threshold {
+			return fmt.Sprintf("%.2f %s", float64(size)/float64(u.threshold), u.suffix)
+		}
+	}
+	return fmt.Sprintf("%d B", size)
 }
 
 func formatDuration(d time.Duration) string {
