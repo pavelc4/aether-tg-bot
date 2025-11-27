@@ -1,14 +1,15 @@
 package utils
 
 import (
-	httpclient "github.com/pavelc4/aether-tg-bot/pkg/http"
 	"net/http"
+
+	pkghttp "github.com/pavelc4/aether-tg-bot/pkg/http"
 )
 
 func GetBotClient() *http.Client {
-	return httpclient.GetBotClient()
+	return pkghttp.GetBotClient()
 }
 
 func GetDownloadClient() *http.Client {
-	return httpclient.GetDownloadClient()
+	return pkghttp.GetDownloadClient()
 }

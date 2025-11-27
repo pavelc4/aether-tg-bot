@@ -1,10 +1,11 @@
 package downloader
 
 import (
-	httpclient "github.com/pavelc4/aether-tg-bot/pkg/http"
 	"net/http"
+
+	pkghttp "github.com/pavelc4/aether-tg-bot/pkg/http"
 )
 
 func GetDownloadClient() *http.Client {
-	return httpclient.GetDownloadClient()
+	return pkghttp.GetDownloadClient()
 }

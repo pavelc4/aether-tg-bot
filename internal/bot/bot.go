@@ -1,4 +1,4 @@
-package telegram
+package bot
 
 import (
 	"context"
@@ -9,12 +9,12 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/pavelc4/aether-tg-bot/config"
-	"github.com/pavelc4/aether-tg-bot/internal/handlers"
-	httpclient "github.com/pavelc4/aether-tg-bot/pkg/http"
+	"github.com/pavelc4/aether-tg-bot/internal/bot/handlers"
+	pkghttp "github.com/pavelc4/aether-tg-bot/pkg/http"
 )
 
 func GetBotClient() *http.Client {
-	return httpclient.GetBotClient()
+	return pkghttp.GetBotClient()
 }
 
 func StartBot(token string) error {

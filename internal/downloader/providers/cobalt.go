@@ -14,39 +14,13 @@ import (
 	"time"
 
 	"github.com/pavelc4/aether-tg-bot/config"
-	httpclient "github.com/pavelc4/aether-tg-bot/pkg/http"
+	pkghttp "github.com/pavelc4/aether-tg-bot/pkg/http"
 )
-
-const (
-	cobaltTimeout   = 60 * time.Second
-	downloadTimeout = 2 * time.Minute
-	minFileSize     = 5120
-)
-
-type cobaltAPIResponse struct {
-	Status   string `json:"status"`
-	URL      string `json:"url"`
-	Filename string `json:"filename"`
-	Picker   []struct {
-		Type string `json:"type"`
-		URL  string `json:"url"`
-	} `json:"picker"`
-	Error struct {
-		Code    string      `json:"code"`
-		Context interface{} `json:"context"`
-	} `json:"error"`
-}
-
-type CobaltProvider struct {
-	timeout  time.Duration
-	client   *http.Client
-	handlers map[string]responseHandler
-}
 
 func NewCobaltProvider() *CobaltProvider {
 	cp := &CobaltProvider{
 		timeout: cobaltTimeout,
-		client:  httpclient.GetDownloadClient(),
+		client:  pkghttp.GetDownloadClient(),
 	}
 	cp.handlers = map[string]responseHandler{
 		"tunnel":   cp.handleTunnelRedirect,
@@ -165,7 +139,7 @@ func (cp *CobaltProvider) handlePicker(ctx context.Context, response *cobaltAPIR
 		log.Printf("Cobalt: Downloading picker item %d/%d", i+1, len(response.Picker))
 		filePath, err := cp.downloadFile(ctx, item.URL, "")
 		if err != nil {
-			log.Printf("⚠️ Failed to download item %d: %v", i+1, err)
+			log.Printf("Failed to download item %d: %v", i+1, err)
 			continue
 		}
 

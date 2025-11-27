@@ -67,9 +67,9 @@ func GetStats() *BotStats {
 		}
 
 		if err := globalStats.LoadFromFile(); err != nil {
-			fmt.Printf("⚠️ Failed to load stats: %v\n", err)
+			fmt.Printf("Failed to load stats: %v\n", err)
 		} else {
-			fmt.Printf("✅ Stats loaded: %d downloads\n", globalStats.TotalDownloads)
+			fmt.Printf("Stats loaded: %d downloads\n", globalStats.TotalDownloads)
 		}
 
 		globalStats.StartAutoSave(5 * time.Minute)
@@ -287,7 +287,7 @@ func (s *BotStats) StartAutoSave(interval time.Duration) {
 	go func() {
 		for range ticker.C {
 			if err := s.SaveToFile(); err != nil {
-				fmt.Printf("⚠️ Failed to save stats: %v\n", err)
+				fmt.Printf("Failed to save stats: %v\n", err)
 			}
 		}
 	}()

@@ -130,14 +130,14 @@ func handleSpeedTest(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		bot.Send(reply)
 	}
 
-	log.Printf("✅ Speedtest completed by owner %d: %.2f MB/s (%.2f Mbps), %dms latency",
+	log.Printf("Speedtest completed by owner %d: %.2f MB/s (%.2f Mbps), %dms latency",
 		msg.From.ID, result.DownloadSpeed/8, result.DownloadSpeed, result.Latency.Milliseconds())
 }
 
 func handleStats(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	if !isOwner(msg.From.ID) {
 		sendText(bot, msg.Chat.ID, "❌ This command is only available to the bot owner.")
-		log.Printf("⚠️ Unauthorized stats attempt by user %d (%s)", msg.From.ID, msg.From.UserName)
+		log.Printf("Unauthorized stats attempt by user %d (%s)", msg.From.ID, msg.From.UserName)
 		return
 	}
 
@@ -222,5 +222,5 @@ func handleStats(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		bot.Send(reply)
 	}
 
-	log.Printf("✅ Stats viewed by owner %d", msg.From.ID)
+	log.Printf("Stats viewed by owner %d", msg.From.ID)
 }

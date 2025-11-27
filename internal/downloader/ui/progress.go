@@ -196,7 +196,7 @@ func UpdateUploadCompleteMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int, 
 	}
 
 	text := fmt.Sprintf(
-		"✅ Upload Complete!\n\n"+
+		" Upload Complete!\n\n"+
 			"📄 %s\n"+
 			"├ Size: %s\n"+
 			"├ Duration: %s\n"+

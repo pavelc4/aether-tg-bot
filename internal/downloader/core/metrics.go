@@ -4,14 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sync"
 	"time"
 )
-
-type MetricsCollector struct {
-	mu      sync.RWMutex
-	metrics *DownloadMetrics
-}
 
 func NewMetricsCollector(provider string) *MetricsCollector {
 	return &MetricsCollector{
@@ -44,7 +38,7 @@ func (mc *MetricsCollector) RecordMultipleFiles(filePaths []string) error {
 	for _, path := range filePaths {
 		info, err := os.Stat(path)
 		if err != nil {
-			log.Printf("⚠️ Warning: Failed to stat file %s: %v", path, err)
+			log.Printf("Warning: Failed to stat file %s: %v", path, err)
 			continue
 		}
 

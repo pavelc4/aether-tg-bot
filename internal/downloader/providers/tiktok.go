@@ -10,57 +10,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
-	httpclient "github.com/pavelc4/aether-tg-bot/pkg/http"
+	pkghttp "github.com/pavelc4/aether-tg-bot/pkg/http"
 )
-
-const (
-	tikTokAPIURL   = "https://www.tikwm.com/api/"
-	tikTokTimeout  = 30 * time.Second
-	maxFilenameLen = 200
-	minAudioSize   = 5120
-	minVideoSize   = 102400 // 100KB minimum for video
-)
-
-var (
-	unsafeCharsRegex = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
-	spacesRegex      = regexp.MustCompile(`\s+`)
-)
-
-type TikWMResponse struct {
-	Code int    `json:"code"`
-	Msg  string `json:"msg"`
-	Data struct {
-		MusicInfo struct {
-			ID      string `json:"id"`
-			Title   string `json:"title"`
-			Author  string `json:"author"`
-			Play    string `json:"play"`
-			PlayURL string `json:"play_url"`
-		} `json:"music_info"`
-		VideoInfo struct {
-			DownloadAddr string `json:"downloadAddr"`
-			PlayAddr     string `json:"playAddr"`
-		} `json:"video"`
-		Videos []struct {
-			DownloadAddr string `json:"downloadAddr"`
-			PlayAddr     string `json:"playAddr"`
-		} `json:"videos"`
-	} `json:"data"`
-}
-
-type TikTokProvider struct {
-	timeout time.Duration
-	client  *http.Client
-}
 
 func NewTikTokProvider() *TikTokProvider {
 	return &TikTokProvider{
 		timeout: tikTokTimeout,
-		client:  httpclient.GetDownloadClient(),
+		client:  pkghttp.GetDownloadClient(),
 	}
 }
 

@@ -22,21 +22,6 @@ import (
 	"github.com/pavelc4/aether-tg-bot/internal/downloader/ui"
 )
 
-const (
-	youtubeTimeout = 10 * time.Minute
-)
-
-type YouTubeProvider struct {
-	timeout    time.Duration
-	useCookies bool
-	bot        *tgbotapi.BotAPI
-	chatID     int64
-	msgID      int
-	username   string
-	fileName   string
-	totalSize  string
-}
-
 func NewYouTubeProvider(useCookies bool) *YouTubeProvider {
 	return &YouTubeProvider{
 		timeout:    youtubeTimeout,

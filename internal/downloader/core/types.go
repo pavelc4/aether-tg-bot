@@ -3,8 +3,25 @@ package core
 import (
 	"fmt"
 	"log"
+	"net/http"
+	"sync"
 	"time"
 )
+
+type MetricsCollector struct {
+	mu      sync.RWMutex
+	metrics *DownloadMetrics
+}
+
+type FileDownloader struct {
+	timeout time.Duration
+	client  *http.Client
+}
+
+type SizeUnit struct {
+	Name       string
+	Multiplier float64
+}
 
 type DownloadOptions struct {
 	AudioOnly  bool

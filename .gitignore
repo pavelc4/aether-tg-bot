@@ -3,8 +3,8 @@
 
 #Dump
 dump
-
-#TXT File
 *.txt
-#env
 .env
+data
+cookie
+bin
