@@ -9,14 +9,6 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-type DownloadProgress struct {
-	Percentage float64
-	Downloaded string
-	Speed      string
-	ETA        string
-	Status     string
-}
-
 func BuildProgressBar(percentage float64) string {
 	const barLength = 10
 	const filledChar = "■"
@@ -166,4 +158,57 @@ func UpdateInitialProgressMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int,
 	}
 
 	log.Printf("Sent initial message")
+}
+
+func UpdateUploadProgressMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int, fileName string, uploadProgress UploadProgress, username string) {
+	if bot == nil {
+		log.Printf("⚠️ [Upload] bot is nil, skipping update")
+		return
+	}
+
+	progressBar := BuildProgressBar(uploadProgress.Percentage)
+	text := fmt.Sprintf(
+		"📄 %s\n"+
+			"├ %s\n"+
+			"├ Status: 📤 Uploading to Telegram...\n"+
+			"├ Uploaded: %s / %s\n"+
+			"├ Speed: %s\n"+
+			"└ User: @%s",
+		fileName,
+		progressBar,
+		uploadProgress.Uploaded,
+		uploadProgress.TotalSize,
+		uploadProgress.Speed,
+		username,
+	)
+
+	edit := tgbotapi.NewEditMessageText(chatID, msgID, text)
+	if _, err := bot.Send(edit); err != nil {
+		if !strings.Contains(err.Error(), "message is not modified") {
+			log.Printf("⚠️ [Upload] Update failed: %v", err)
+		}
+	}
+}
+
+func UpdateUploadCompleteMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int, fileName string, totalSize string, duration string, username string) {
+	if bot == nil {
+		return
+	}
+
+	text := fmt.Sprintf(
+		"✅ Upload Complete!\n\n"+
+			"📄 %s\n"+
+			"├ Size: %s\n"+
+			"├ Duration: %s\n"+
+			"└ User: @%s",
+		fileName,
+		totalSize,
+		duration,
+		username,
+	)
+
+	edit := tgbotapi.NewEditMessageText(chatID, msgID, text)
+	if _, err := bot.Send(edit); err != nil {
+		log.Printf("⚠️ [Upload] Failed to update complete message: %v", err)
+	}
 }

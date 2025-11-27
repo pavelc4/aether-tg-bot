@@ -1,5 +1,25 @@
 package handlers
 
+import (
+	"regexp"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+var commandHandlers = map[string]func(*tgbotapi.BotAPI, *tgbotapi.Message){
+	"start":     handleStart,
+	"help":      handleHelp,
+	"speedtest": handleSpeedTest,
+	"stats":     handleStats,
+	"mp":        handleDownloadAudio,
+	"video":     handleDownloadVideo,
+	"dl":        handleDownloadGeneric,
+}
+
+var (
+	urlRegex = regexp.MustCompile(`(https?://[^\s]+)`)
+)
+
 var platformMap = map[string]string{
 	"instagram.com":   "Instagram",
 	"tiktok.com":      "TikTok",
@@ -20,6 +40,3 @@ var platformMap = map[string]string{
 	"ok.ru":           "OK.ru",
 	"vk.com":          "VK",
 }
-
-
-

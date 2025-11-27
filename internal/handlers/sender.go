@@ -3,9 +3,47 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/pavelc4/aether-tg-bot/internal/downloader/ui"
 )
+
+func NewProgressReader(filePath string, tracker *ui.UploadTracker) (*ProgressReader, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+
+	return &ProgressReader{
+		file:      file,
+		totalSize: fileInfo.Size(),
+		tracker:   tracker,
+	}, nil
+}
+
+func (pr *ProgressReader) Read(p []byte) (int, error) {
+	n, err := pr.file.Read(p)
+	pr.totalRead += int64(n)
+
+	if pr.tracker != nil {
+		pr.tracker.Update(pr.totalRead)
+	}
+
+	return n, err
+}
+
+func (pr *ProgressReader) Close() error {
+	return pr.file.Close()
+}
 
 func sendText(bot *tgbotapi.BotAPI, chatID int64, text string) {
 	msg := tgbotapi.NewMessage(chatID, text)
@@ -22,51 +60,165 @@ func deleteMessage(bot *tgbotapi.BotAPI, chatID int64, msgID int) {
 }
 
 func sendVideo(bot *tgbotapi.BotAPI, chatID int64, filePath string) {
-	video := tgbotapi.NewVideo(chatID, tgbotapi.FilePath(filePath))
-	video.SupportsStreaming = true
-	if _, err := bot.Send(video); err != nil {
-		log.Printf("❌ Failed to send video: %v", err)
-	}
+	sendVideoWithProgress(bot, chatID, filePath, "", 0, "")
 }
 
 func sendVideoWithCaption(bot *tgbotapi.BotAPI, chatID int64, filePath, caption string) {
-	video := tgbotapi.NewVideo(chatID, tgbotapi.FilePath(filePath))
-	video.SupportsStreaming = true
-	video.Caption = caption
-	video.ParseMode = "Markdown"
-	if _, err := bot.Send(video); err != nil {
-		log.Printf("❌ Failed to send video with caption: %v", err)
-		sendVideo(bot, chatID, filePath)
-	}
+	sendVideoWithProgress(bot, chatID, filePath, caption, 0, "")
 }
 
 func sendAudio(bot *tgbotapi.BotAPI, chatID int64, filePath string) {
-	audio := tgbotapi.NewAudio(chatID, tgbotapi.FilePath(filePath))
-	if _, err := bot.Send(audio); err != nil {
-		log.Printf("❌ Failed to send audio: %v", err)
-	}
+	sendAudioWithProgress(bot, chatID, filePath, "", 0, "")
 }
 
 func sendAudioWithCaption(bot *tgbotapi.BotAPI, chatID int64, filePath, caption string) {
-	audio := tgbotapi.NewAudio(chatID, tgbotapi.FilePath(filePath))
-	audio.Caption = caption
-	audio.ParseMode = "Markdown"
-	if _, err := bot.Send(audio); err != nil {
-		log.Printf("❌ Failed to send audio with caption: %v", err)
-		sendAudio(bot, chatID, filePath)
+	sendAudioWithProgress(bot, chatID, filePath, caption, 0, "")
+}
+
+func sendVideoWithProgress(bot *tgbotapi.BotAPI, chatID int64, filePath, caption string, msgID int, username string) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		log.Printf("❌ Failed to stat video file: %v", err)
+		video := tgbotapi.NewVideo(chatID, tgbotapi.FilePath(filePath))
+		video.SupportsStreaming = true
+		if caption != "" {
+			video.Caption = caption
+			video.ParseMode = "Markdown"
+		}
+		bot.Send(video)
+		return
+	}
+
+	fileName := filepath.Base(filePath)
+	fileSize := fileInfo.Size()
+
+	var tracker *ui.UploadTracker
+	if msgID > 0 && username != "" {
+		tracker = ui.NewUploadTracker(bot, chatID, msgID, fileName, fileSize, username)
+		log.Printf("📤 Starting video upload: %s (%.2f MB)", fileName, float64(fileSize)/(1024*1024))
+	}
+
+	progressReader, err := NewProgressReader(filePath, tracker)
+	if err != nil {
+		log.Printf("❌ Failed to open video file: %v", err)
+		video := tgbotapi.NewVideo(chatID, tgbotapi.FilePath(filePath))
+		video.SupportsStreaming = true
+		if caption != "" {
+			video.Caption = caption
+			video.ParseMode = "Markdown"
+		}
+		bot.Send(video)
+		return
+	}
+	defer progressReader.Close()
+
+	video := tgbotapi.NewVideo(chatID, tgbotapi.FileReader{
+		Name:   fileName,
+		Reader: progressReader,
+	})
+	video.SupportsStreaming = true
+
+	if caption != "" {
+		video.Caption = caption
+		video.ParseMode = "Markdown"
+	}
+
+	startTime := time.Now()
+	_, err = bot.Send(video)
+
+	if err != nil {
+		log.Printf("❌ Failed to send video: %v", err)
+		return
+	}
+
+	if tracker != nil {
+		tracker.Complete()
+		duration := time.Since(startTime)
+		log.Printf("✅ Video upload complete: %s in %.1fs (%.2f MB/s)",
+			fileName,
+			duration.Seconds(),
+			float64(fileSize)/(1024*1024)/duration.Seconds(),
+		)
+	}
+}
+
+func sendAudioWithProgress(bot *tgbotapi.BotAPI, chatID int64, filePath, caption string, msgID int, username string) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		log.Printf("❌ Failed to stat audio file: %v", err)
+		audio := tgbotapi.NewAudio(chatID, tgbotapi.FilePath(filePath))
+		if caption != "" {
+			audio.Caption = caption
+			audio.ParseMode = "Markdown"
+		}
+		bot.Send(audio)
+		return
+	}
+
+	fileName := filepath.Base(filePath)
+	fileSize := fileInfo.Size()
+
+	var tracker *ui.UploadTracker
+	if msgID > 0 && username != "" {
+		tracker = ui.NewUploadTracker(bot, chatID, msgID, fileName, fileSize, username)
+		log.Printf("📤 Starting audio upload: %s (%.2f MB)", fileName, float64(fileSize)/(1024*1024))
+	}
+
+	progressReader, err := NewProgressReader(filePath, tracker)
+	if err != nil {
+		log.Printf("❌ Failed to open audio file: %v", err)
+		audio := tgbotapi.NewAudio(chatID, tgbotapi.FilePath(filePath))
+		if caption != "" {
+			audio.Caption = caption
+			audio.ParseMode = "Markdown"
+		}
+		bot.Send(audio)
+		return
+	}
+	defer progressReader.Close()
+	audio := tgbotapi.NewAudio(chatID, tgbotapi.FileReader{
+		Name:   fileName,
+		Reader: progressReader,
+	})
+
+	if caption != "" {
+		audio.Caption = caption
+		audio.ParseMode = "Markdown"
+	}
+
+	startTime := time.Now()
+	_, err = bot.Send(audio)
+
+	if err != nil {
+		log.Printf("❌ Failed to send audio: %v", err)
+		return
+	}
+
+	if tracker != nil {
+		tracker.Complete()
+		duration := time.Since(startTime)
+		log.Printf(" Audio upload complete: %s in %.1fs (%.2f MB/s)",
+			fileName,
+			duration.Seconds(),
+			float64(fileSize)/(1024*1024)/duration.Seconds(),
+		)
 	}
 }
 
 func sendMediaGroup(bot *tgbotapi.BotAPI, chatID int64, filePaths []string, caption string, isVideo bool) error {
+	return sendMediaGroupWithProgress(bot, chatID, filePaths, caption, isVideo, 0, "")
+}
+
+func sendMediaGroupWithProgress(bot *tgbotapi.BotAPI, chatID int64, filePaths []string, caption string, isVideo bool, msgID int, username string) error {
 	if len(filePaths) == 0 {
 		return fmt.Errorf("no files to send")
 	}
 
 	if len(filePaths) == 1 {
 		if isVideo {
-			sendVideoWithCaption(bot, chatID, filePaths[0], caption)
+			sendVideoWithProgress(bot, chatID, filePaths[0], caption, msgID, username)
 		} else {
-			sendAudioWithCaption(bot, chatID, filePaths[0], caption)
+			sendAudioWithProgress(bot, chatID, filePaths[0], caption, msgID, username)
 		}
 		return nil
 	}
@@ -105,9 +257,9 @@ func sendMediaGroup(bot *tgbotapi.BotAPI, chatID int64, filePaths []string, capt
 			for k, path := range batch {
 				if i == 0 && k == 0 {
 					if isVideo {
-						sendVideoWithCaption(bot, chatID, path, caption)
+						sendVideoWithProgress(bot, chatID, path, caption, msgID, username)
 					} else {
-						sendAudioWithCaption(bot, chatID, path, caption)
+						sendAudioWithProgress(bot, chatID, path, caption, msgID, username)
 					}
 				} else {
 					if isVideo {

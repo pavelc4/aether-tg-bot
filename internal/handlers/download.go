@@ -52,9 +52,8 @@ func handleDownloadAudio(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 	caption := BuildMediaCaption(source, args, "Audio", size, duration, username)
 
-	sendMediaGroup(bot, msg.Chat.ID, filePaths, caption, false)
+	sendMediaGroupWithProgress(bot, msg.Chat.ID, filePaths, caption, false, processingMsg.MessageID, username)
 
-	deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
 }
 
 func handleDownloadVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
@@ -95,7 +94,5 @@ func handleDownloadVideo(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 	caption := BuildMediaCaption(source, args, "Video", size, duration, username)
 
-	sendMediaGroup(bot, msg.Chat.ID, filePaths, caption, true)
-
-	deleteMessage(bot, msg.Chat.ID, processingMsg.MessageID)
+	sendMediaGroupWithProgress(bot, msg.Chat.ID, filePaths, caption, true, processingMsg.MessageID, username)
 }

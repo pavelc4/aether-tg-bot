@@ -3,26 +3,11 @@ package handlers
 import (
 	"fmt"
 	"log"
-	"regexp"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/pavelc4/aether-tg-bot/internal/downloader"
 )
-
-var (
-	urlRegex = regexp.MustCompile(`(https?://[^\s]+)`)
-)
-
-var commandHandlers = map[string]func(*tgbotapi.BotAPI, *tgbotapi.Message){
-	"start":     handleStart,
-	"help":      handleHelp,
-	"speedtest": handleSpeedTest,
-	"stats":     handleStats,
-	"mp":        handleDownloadAudio,
-	"video":     handleDownloadVideo,
-	"dl":        handleDownloadGeneric,
-}
 
 func HandleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	cmd := msg.Command()
