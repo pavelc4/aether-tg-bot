@@ -2,106 +2,91 @@ package bot
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"net/http"
-	"time"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strconv"
+	"syscall"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/pavelc4/aether-tg-bot/config"
+	"github.com/gotd/td/session"
+	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/tg"
 	"github.com/pavelc4/aether-tg-bot/internal/bot/handlers"
-	pkghttp "github.com/pavelc4/aether-tg-bot/pkg/http"
+	"github.com/pavelc4/aether-tg-bot/internal/stats"
 )
 
-func GetBotClient() *http.Client {
-	return pkghttp.GetBotClient()
-}
+func StartBot() {
+	// Initialize stats
+	stats.InitStats()
 
-func StartBot(token string) error {
-	apiURL := config.GetTelegramApiURL()
-	if apiURL == "" {
-		apiURL = "http://localhost:8081"
-		log.Printf("Using default Telegram API URL: %s", apiURL)
+	// Parse configuration
+	apiIDStr := os.Getenv("TELEGRAM_API_ID")
+	apiHash := os.Getenv("TELEGRAM_API_HASH")
+	botToken := os.Getenv("BOT_TOKEN")
+
+	if apiIDStr == "" || apiHash == "" || botToken == "" {
+		log.Fatal("TELEGRAM_API_ID, TELEGRAM_API_HASH, or BOT_TOKEN is not set")
 	}
 
-	httpClient := GetBotClient()
-
-	bot, err := tgbotapi.NewBotAPIWithClient(token, apiURL+"/bot%s/%s", httpClient)
+	apiID, err := strconv.Atoi(apiIDStr)
 	if err != nil {
-		return fmt.Errorf("failed to create bot API client: %w", err)
+		log.Fatalf("Invalid TELEGRAM_API_ID: %v", err)
 	}
 
-	log.Printf(" Bot @%s is now online!", bot.Self.UserName)
+	// Create dispatcher
+	dispatcher := tg.NewUpdateDispatcher()
 
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = config.GetUpdateTimeout()
+	// Ensure data directory exists
+	if err := os.MkdirAll("data", 0755); err != nil {
+		log.Fatalf("Failed to create data directory: %v", err)
+	}
 
-	updates := bot.GetUpdatesChan(u)
+	// Create client
+	client := telegram.NewClient(apiID, apiHash, telegram.Options{
+		UpdateHandler: dispatcher,
+		SessionStorage: &session.FileStorage{
+			Path: filepath.Join("data", "gotd_session.json"),
+		},
+	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// Register handlers
+	h := handlers.NewHandler(client)
+	h.Register(dispatcher)
+
+	// Context for graceful shutdown
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	sem := make(chan struct{}, config.GetWorkerPoolSize())
+	log.Println("Starting Aether Bot (Gotd Edition)...")
 
-	for update := range updates {
-		if update.Message == nil {
-			continue
+	if err := client.Run(ctx, func(ctx context.Context) error {
+		// Authenticate
+		status, err := client.Auth().Status(ctx)
+		if err != nil {
+			return err
 		}
 
-		select {
-		case sem <- struct{}{}:
-		case <-ctx.Done():
-			log.Println(" Bot shutting down...")
-			return nil
+		if !status.Authorized {
+			if _, err := client.Auth().Bot(ctx, botToken); err != nil {
+				return err
+			}
 		}
 
-		go func(update tgbotapi.Update) {
-			defer func() {
-				<-sem
+		// Get self info
+		me, err := client.Self(ctx)
+		if err != nil {
+			return err
+		}
 
-				if r := recover(); r != nil {
-					log.Printf(" Panic recovered in update handler: %v", r)
-				}
-			}()
+		log.Printf("Bot @%s is now online!", me.Username)
 
-			processCtx, processCancel := context.WithTimeout(ctx, config.GetProcessingTimeout())
-			defer processCancel()
-
-			processUpdate(processCtx, bot, &update)
-		}(update)
+		// Wait for context cancellation
+		<-ctx.Done()
+		return nil
+	}); err != nil {
+		log.Fatal(err)
 	}
 
-	return nil
-}
-
-func processUpdate(ctx context.Context, bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
-	select {
-	case <-ctx.Done():
-		log.Printf("  Update processing cancelled: %v", ctx.Err())
-		return
-	default:
-	}
-
-	msg := update.Message
-
-	if time.Since(time.Unix(int64(msg.Date), 0)) > 5*time.Minute {
-		log.Printf("  Ignoring old message from %s", msg.From.UserName)
-		return
-	}
-
-	if msg.IsCommand() {
-		handlers.HandleCommand(bot, msg)
-	} else {
-		handlers.HandleMessage(bot, msg)
-	}
-}
-
-func GracefulShutdown(bot *tgbotapi.BotAPI) {
-	log.Println(" Initiating graceful shutdown...")
-
-	bot.StopReceivingUpdates()
-
-	time.Sleep(config.GetShutdownTimeout())
-
-	log.Println(" Bot shutdown complete")
+	log.Println("Bot stopped.")
 }

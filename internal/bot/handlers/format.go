@@ -44,7 +44,7 @@ func FormatFileSize(size int64) string {
 	return fmt.Sprintf("%d B", size)
 }
 
-func formatDuration(d time.Duration) string {
+func FormatDuration(d time.Duration) string {
 	if d < time.Second {
 		return fmt.Sprintf("%dms", d.Milliseconds())
 	}
@@ -83,7 +83,7 @@ func BuildMediaCaption(source, url, mediaType string, size int64, duration time.
 		formatPlatform(source),
 		url,
 		FormatFileSize(size),
-		formatDuration(duration),
+		FormatDuration(duration),
 		username,
 	)
 	return caption

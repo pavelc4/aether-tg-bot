@@ -4,8 +4,6 @@ import (
 	"context"
 	"net/http"
 	"time"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 type Provider interface {
@@ -48,32 +46,20 @@ type cobaltAPIResponse struct {
 type YouTubeProvider struct {
 	timeout    time.Duration
 	useCookies bool
-	bot        *tgbotapi.BotAPI
-	chatID     int64
-	msgID      int
-	username   string
-	fileName   string
-	totalSize  string
 }
 
 type TikWMResponse struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 	Data struct {
+		Play      string `json:"play"`
+		WmPlay    string `json:"wmplay"`
+		Music     string `json:"music"`
+		Title     string `json:"title"`
 		MusicInfo struct {
-			ID      string `json:"id"`
-			Title   string `json:"title"`
-			Author  string `json:"author"`
-			Play    string `json:"play"`
-			PlayURL string `json:"play_url"`
+			Title  string `json:"title"`
+			Author string `json:"author"`
+			Play   string `json:"play"`
 		} `json:"music_info"`
-		VideoInfo struct {
-			DownloadAddr string `json:"downloadAddr"`
-			PlayAddr     string `json:"playAddr"`
-		} `json:"video"`
-		Videos []struct {
-			DownloadAddr string `json:"downloadAddr"`
-			PlayAddr     string `json:"playAddr"`
-		} `json:"videos"`
 	} `json:"data"`
 }

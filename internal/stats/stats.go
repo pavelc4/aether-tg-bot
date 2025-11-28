@@ -25,7 +25,7 @@ type BotStats struct {
 	mu        sync.RWMutex
 	StartTime time.Time
 
-	TotalDownloads   int64
+	Downloads        int64
 	TotalFiles       int64
 	TotalBytes       int64
 	SuccessDownloads int64
@@ -55,6 +55,10 @@ type PeriodStats struct {
 	Users     map[int64]bool
 }
 
+func InitStats() {
+	GetStats()
+}
+
 func GetStats() *BotStats {
 	once.Do(func() {
 		globalStats = &BotStats{
@@ -69,7 +73,7 @@ func GetStats() *BotStats {
 		if err := globalStats.LoadFromFile(); err != nil {
 			fmt.Printf("Failed to load stats: %v\n", err)
 		} else {
-			fmt.Printf("Stats loaded: %d downloads\n", globalStats.TotalDownloads)
+			fmt.Printf("Stats loaded: %d downloads\n", globalStats.Downloads)
 		}
 
 		globalStats.StartAutoSave(5 * time.Minute)
@@ -82,13 +86,32 @@ func GetStats() *BotStats {
 	return globalStats
 }
 
+func TrackUser(userID int64) {
+	s := GetStats()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.UniqueUsers[userID] = true
+}
+
+func TrackDownload() {
+	s := GetStats()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Downloads++
+	s.LastDownloadTime = time.Now()
+}
+
+func GetUptime() string {
+	return time.Since(GetStats().StartTime).Round(time.Second).String()
+}
+
 func (s *BotStats) RecordDownload(userID int64, platform, mediaType string, files int, bytes int64, success bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now()
 
-	s.TotalDownloads++
+	s.Downloads++
 	s.TotalFiles += int64(files)
 	s.TotalBytes += bytes
 	s.LastDownloadTime = now

@@ -23,7 +23,6 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \
-    aria2 \
     tzdata \
     curl \
     procps && \

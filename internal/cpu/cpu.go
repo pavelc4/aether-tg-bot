@@ -3,8 +3,6 @@ package cpu
 import (
 	"context"
 	"log"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // CPUManager interface
@@ -12,7 +10,6 @@ type CPUManager interface {
 	IsEnabled() bool
 	BuildAria2Args(ctx context.Context) string
 	GetOptimalConnections(ctx context.Context) int
-	MonitorCPUDuringDownload(ctx context.Context, bot *tgbotapi.BotAPI, chatID int64, msgID int)
 }
 
 // Global CPU manager
@@ -54,8 +51,4 @@ func (m *SimpleCPUManager) BuildAria2Args(ctx context.Context) string {
 
 func (m *SimpleCPUManager) GetOptimalConnections(ctx context.Context) int {
 	return 16
-}
-
-func (m *SimpleCPUManager) MonitorCPUDuringDownload(ctx context.Context, bot *tgbotapi.BotAPI, chatID int64, msgID int) {
-	log.Printf("CPU monitoring (not implemented in SimpleCPUManager)")
 }

@@ -51,11 +51,12 @@ func (tp *TikTokProvider) downloadVideo(ctx context.Context, url string) ([]stri
 
 	// Get video URL from response
 	videoURL := ""
-	if response.Data.VideoInfo.DownloadAddr != "" {
-		videoURL = response.Data.VideoInfo.DownloadAddr
+	if response.Data.Play != "" {
+		videoURL = response.Data.Play
 	}
-	if videoURL == "" && len(response.Data.Videos) > 0 {
-		videoURL = response.Data.Videos[0].DownloadAddr
+	// TikWM returns relative URLs sometimes
+	if videoURL != "" && !strings.HasPrefix(videoURL, "http") {
+		videoURL = "https://tikwm.com" + videoURL
 	}
 
 	if videoURL == "" {
@@ -187,9 +188,13 @@ func (tp *TikTokProvider) fetchAudioURL(ctx context.Context, tiktokURL string) (
 	}
 
 	music := result.Data.MusicInfo
-	audioURL := music.Play
+	audioURL := result.Data.Music
 	if audioURL == "" {
-		audioURL = music.PlayURL
+		audioURL = music.Play
+	}
+
+	if audioURL != "" && !strings.HasPrefix(audioURL, "http") {
+		audioURL = "https://tikwm.com" + audioURL
 	}
 
 	if audioURL == "" {
