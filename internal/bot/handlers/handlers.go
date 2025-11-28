@@ -8,9 +8,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/message"
+	"github.com/gotd/td/telegram/message/styling"
 	"github.com/gotd/td/tg"
 	"github.com/pavelc4/aether-tg-bot/internal/downloader"
 	"github.com/pavelc4/aether-tg-bot/internal/downloader/core"
@@ -372,7 +374,10 @@ func (h *Handler) handleDownload(ctx context.Context, msg *tg.Message, entities 
 	}
 
 	// Download
-	filePaths, _, providerName, err := downloader.UniversalDownload(url, audioOnly, 0)
+	startTime := time.Now()
+	filePaths, totalSize, providerName, title, err := downloader.UniversalDownload(url, audioOnly, 0)
+	duration := time.Since(startTime)
+
 	if err != nil {
 		errMsg := fmt.Sprintf("❌ Error: %v", err)
 		if hasMsgID {
@@ -405,15 +410,48 @@ func (h *Handler) handleDownload(ctx context.Context, msg *tg.Message, entities 
 		}
 	}
 
-	// Upload files
-	caption := fmt.Sprintf("✅ Downloaded via %s", providerName)
-	if len(filePaths) > 1 {
-		caption += fmt.Sprintf(" (%d files)", len(filePaths))
+	// Get User Name
+	userName := "Unknown"
+	if userPeer, ok := msg.PeerID.(*tg.PeerUser); ok {
+		// Try to find user in entities
+		for _, user := range entities.Users {
+			if user.ID == userPeer.UserID {
+				if user.Username != "" {
+					userName = "@" + user.Username
+				} else {
+					userName = user.FirstName
+					if user.LastName != "" {
+						userName += " " + user.LastName
+					}
+				}
+				break
+			}
+		}
 	}
 
-	err = SendFiles(ctx, h.Client, peer, filePaths, caption)
+	displayProvider := providerName
+	if strings.Contains(url, "instagram.com") {
+		displayProvider = "Instagram"
+	} else if strings.Contains(url, "youtu") {
+		displayProvider = "YouTube"
+	} else if strings.Contains(url, "tiktok.com") {
+		displayProvider = "TikTok"
+	} else if strings.Contains(url, "twitter.com") || strings.Contains(url, "x.com") {
+		displayProvider = "X (Twitter)"
+	} else if strings.Contains(url, "facebook.com") || strings.Contains(url, "fb.watch") {
+		displayProvider = "Facebook"
+	}
 
-	// Delete the "Uploading..." message after upload attempt
+	captionOpts := []styling.StyledTextOption{
+		styling.Bold(title), styling.Plain("\n"),
+		styling.Plain("🔗 Source : "), styling.TextURL(displayProvider, url), styling.Plain("\n"),
+		styling.Plain("💾 Size : "), styling.Plain(FormatFileSize(totalSize)), styling.Plain("\n"),
+		styling.Plain("⏱️ Processing Time : "), styling.Plain(duration.Round(time.Second).String()), styling.Plain("\n"),
+		styling.Plain("👤 By : "), styling.Plain(userName),
+	}
+
+	err = SendFiles(ctx, h.Client, peer, filePaths, captionOpts)
+
 	if hasMsgID {
 		_, delErr := h.Client.API().MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
 			ID:     []int{msgID},

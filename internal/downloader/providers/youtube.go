@@ -32,12 +32,12 @@ func (yp *YouTubeProvider) CanHandle(url string) bool {
 	return strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be")
 }
 
-func (yp *YouTubeProvider) Download(ctx context.Context, url string, audioOnly bool) ([]string, error) {
+func (yp *YouTubeProvider) Download(ctx context.Context, url string, audioOnly bool) ([]string, string, error) {
 	log.Printf("YouTube: Starting download (audio=%v, cookies=%v)", audioOnly, yp.useCookies)
 
 	tmpDir, err := os.MkdirTemp("", "aether-youtube-")
 	if err != nil {
-		return nil, fmt.Errorf("create temp directory failed: %w", err)
+		return nil, "", fmt.Errorf("create temp directory failed: %w", err)
 	}
 
 	if ctx == nil {
@@ -54,7 +54,7 @@ func (yp *YouTubeProvider) Download(ctx context.Context, url string, audioOnly b
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
+		return nil, "", fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
 	go yp.trackProgress(stdoutPipe)
@@ -66,23 +66,23 @@ func (yp *YouTubeProvider) Download(ctx context.Context, url string, audioOnly b
 
 	if err := cmd.Start(); err != nil {
 		os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("failed to start yt-dlp: %w", err)
+		return nil, "", fmt.Errorf("failed to start yt-dlp: %w", err)
 	}
 
 	if err := cmd.Wait(); err != nil {
 		os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("yt-dlp failed: %w\nStderr: %s", err, stderr.String())
+		return nil, "", fmt.Errorf("yt-dlp failed: %w\nStderr: %s", err, stderr.String())
 	}
 
 	files, err := filepath.Glob(filepath.Join(tmpDir, "*"))
 	if err != nil {
 		os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("list files failed: %w", err)
+		return nil, "", fmt.Errorf("list files failed: %w", err)
 	}
 
 	if len(files) == 0 {
 		os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("no files downloaded")
+		return nil, "", fmt.Errorf("no files downloaded")
 	}
 
 	var validFiles []string
@@ -94,11 +94,14 @@ func (yp *YouTubeProvider) Download(ctx context.Context, url string, audioOnly b
 
 	if len(validFiles) == 0 {
 		os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("no valid files found")
+		return nil, "", fmt.Errorf("no valid files found")
 	}
 
 	log.Printf("YouTube: Downloaded %d file(s)", len(validFiles))
-	return validFiles, nil
+	title := filepath.Base(validFiles[0])
+	title = strings.TrimSuffix(title, filepath.Ext(title))
+
+	return validFiles, title, nil
 }
 
 func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {

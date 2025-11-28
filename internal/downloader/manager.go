@@ -11,7 +11,7 @@ import (
 	"github.com/pavelc4/aether-tg-bot/internal/stats"
 )
 
-func UniversalDownload(url string, audioOnly bool, userID int64) ([]string, int64, string, error) {
+func UniversalDownload(url string, audioOnly bool, userID int64) ([]string, int64, string, string, error) {
 	mediaType := "Video"
 	if audioOnly {
 		mediaType = "Audio"
@@ -34,7 +34,7 @@ func UniversalDownload(url string, audioOnly bool, userID int64) ([]string, int6
 
 		log.Printf("Trying %s provider (audioOnly=%v)", provider.Name(), audioOnly)
 
-		filePaths, err := provider.Download(ctx, url, audioOnly)
+		filePaths, title, err := provider.Download(ctx, url, audioOnly)
 		if err != nil {
 			log.Printf("%s failed: %v", provider.Name(), err)
 			lastErr = err
@@ -50,14 +50,14 @@ func UniversalDownload(url string, audioOnly bool, userID int64) ([]string, int6
 		log.Printf("%s: Successfully downloaded %d file(s)", provider.Name(), len(filePaths))
 		stats.GetStats().RecordDownload(userID, provider.Name(), mediaType, len(filePaths), size, true)
 
-		return filePaths, size, provider.Name(), nil
+		return filePaths, size, provider.Name(), title, nil
 	}
 
 	stats.GetStats().RecordDownload(userID, "Unknown", mediaType, 0, 0, false)
 	if lastErr != nil {
-		return nil, 0, "", lastErr
+		return nil, 0, "", "", lastErr
 	}
-	return nil, 0, "", fmt.Errorf("no suitable provider found or all failed")
+	return nil, 0, "", "", fmt.Errorf("no suitable provider found or all failed")
 }
 
 func getTotalSize(filePaths []string) int64 {

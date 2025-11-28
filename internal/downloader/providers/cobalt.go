@@ -31,7 +31,7 @@ func NewCobaltProvider() *CobaltProvider {
 	return cp
 }
 
-type responseHandler func(context.Context, *cobaltAPIResponse) ([]string, error)
+type responseHandler func(context.Context, *cobaltAPIResponse) ([]string, string, error)
 
 func (cp *CobaltProvider) Name() string {
 	return "Cobalt"
@@ -41,12 +41,12 @@ func (cp *CobaltProvider) CanHandle(url string) bool {
 	return true
 }
 
-func (cp *CobaltProvider) Download(ctx context.Context, url string, audioOnly bool) ([]string, error) {
+func (cp *CobaltProvider) Download(ctx context.Context, url string, audioOnly bool) ([]string, string, error) {
 	log.Printf(" Cobalt: Requesting... (audio=%v)", audioOnly)
 
 	response, err := cp.requestAPI(ctx, url, audioOnly)
 	if err != nil {
-		return nil, fmt.Errorf("cobalt API request failed: %w", err)
+		return nil, "", fmt.Errorf("cobalt API request failed: %w", err)
 	}
 
 	return cp.processResponse(ctx, response)
@@ -100,34 +100,34 @@ func (cp *CobaltProvider) requestAPI(ctx context.Context, mediaURL string, audio
 	return &cobaltResponse, nil
 }
 
-func (cp *CobaltProvider) processResponse(ctx context.Context, response *cobaltAPIResponse) ([]string, error) {
+func (cp *CobaltProvider) processResponse(ctx context.Context, response *cobaltAPIResponse) ([]string, string, error) {
 	if handler, exists := cp.handlers[response.Status]; exists {
 		return handler(ctx, response)
 	}
-	return nil, fmt.Errorf("unknown cobalt status: %s", response.Status)
+	return nil, "", fmt.Errorf("unknown cobalt status: %s", response.Status)
 }
 
-func (cp *CobaltProvider) handleError(ctx context.Context, response *cobaltAPIResponse) ([]string, error) {
-	return nil, fmt.Errorf("cobalt error: %s", response.Error.Code)
+func (cp *CobaltProvider) handleError(ctx context.Context, response *cobaltAPIResponse) ([]string, string, error) {
+	return nil, "", fmt.Errorf("cobalt error: %s", response.Error.Code)
 }
 
-func (cp *CobaltProvider) handleTunnelRedirect(ctx context.Context, response *cobaltAPIResponse) ([]string, error) {
+func (cp *CobaltProvider) handleTunnelRedirect(ctx context.Context, response *cobaltAPIResponse) ([]string, string, error) {
 	if response.URL == "" {
-		return nil, fmt.Errorf("empty URL in response")
+		return nil, "", fmt.Errorf("empty URL in response")
 	}
 
 	log.Printf("Cobalt: Downloading from redirect URL")
 	filePath, err := cp.downloadFile(ctx, response.URL, response.Filename)
 	if err != nil {
-		return nil, fmt.Errorf("download failed: %w", err)
+		return nil, "", fmt.Errorf("download failed: %w", err)
 	}
 
-	return []string{filePath}, nil
+	return []string{filePath}, response.Filename, nil
 }
 
-func (cp *CobaltProvider) handlePicker(ctx context.Context, response *cobaltAPIResponse) ([]string, error) {
+func (cp *CobaltProvider) handlePicker(ctx context.Context, response *cobaltAPIResponse) ([]string, string, error) {
 	if len(response.Picker) == 0 {
-		return nil, fmt.Errorf("empty picker array")
+		return nil, "", fmt.Errorf("empty picker array")
 	}
 
 	var filePaths []string
@@ -147,10 +147,10 @@ func (cp *CobaltProvider) handlePicker(ctx context.Context, response *cobaltAPIR
 	}
 
 	if len(filePaths) == 0 {
-		return nil, fmt.Errorf("no files downloaded")
+		return nil, "", fmt.Errorf("no files downloaded")
 	}
 
-	return filePaths, nil
+	return filePaths, response.Filename, nil
 }
 
 func (cp *CobaltProvider) downloadFile(ctx context.Context, mediaURL, suggestedFilename string) (string, error) {

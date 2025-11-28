@@ -9,7 +9,7 @@ import (
 type Provider interface {
 	Name() string
 	CanHandle(url string) bool
-	Download(ctx context.Context, url string, audioOnly bool) ([]string, error)
+	Download(ctx context.Context, url string, audioOnly bool) ([]string, string, error)
 }
 
 type DownloadOptions struct {

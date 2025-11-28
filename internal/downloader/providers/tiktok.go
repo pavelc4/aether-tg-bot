@@ -32,7 +32,7 @@ func (tp *TikTokProvider) CanHandle(url string) bool {
 }
 
 // Support BOTH audio and video
-func (tp *TikTokProvider) Download(ctx context.Context, url string, audioOnly bool) ([]string, error) {
+func (tp *TikTokProvider) Download(ctx context.Context, url string, audioOnly bool) ([]string, string, error) {
 	if audioOnly {
 		log.Printf(" TikTok: Downloading AUDIO")
 		return tp.downloadAudio(ctx, url)
@@ -42,11 +42,11 @@ func (tp *TikTokProvider) Download(ctx context.Context, url string, audioOnly bo
 	}
 }
 
-func (tp *TikTokProvider) downloadVideo(ctx context.Context, url string) ([]string, error) {
+func (tp *TikTokProvider) downloadVideo(ctx context.Context, url string) ([]string, string, error) {
 	log.Printf(" TikTok: Fetching video URL...")
 	response, err := tp.fetchVideoData(ctx, url)
 	if err != nil {
-		return nil, fmt.Errorf("fetch video data failed: %w", err)
+		return nil, "", fmt.Errorf("fetch video data failed: %w", err)
 	}
 
 	// Get video URL from response
@@ -60,46 +60,46 @@ func (tp *TikTokProvider) downloadVideo(ctx context.Context, url string) ([]stri
 	}
 
 	if videoURL == "" {
-		return nil, fmt.Errorf("video URL not found")
+		return nil, "", fmt.Errorf("video URL not found")
 	}
 
 	tmpDir, err := os.MkdirTemp("", "aether-tiktok-video-")
 	if err != nil {
-		return nil, fmt.Errorf("create temp directory failed: %w", err)
+		return nil, "", fmt.Errorf("create temp directory failed: %w", err)
 	}
 
 	filePath, err := tp.downloadVideoFile(ctx, videoURL, tmpDir)
 	if err != nil {
 		os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("download video file failed: %w", err)
+		return nil, "", fmt.Errorf("download video file failed: %w", err)
 	}
 
 	log.Printf(" TikTok: Video downloaded: %s", filePath)
-	return []string{filePath}, nil
+	return []string{filePath}, response.Data.Title, nil
 }
 
-func (tp *TikTokProvider) downloadAudio(ctx context.Context, url string) ([]string, error) {
+func (tp *TikTokProvider) downloadAudio(ctx context.Context, url string) ([]string, string, error) {
 	log.Printf(" TikTok: Fetching audio URL...")
 	audioURL, title, author, err := tp.fetchAudioURL(ctx, url)
 	if err != nil {
-		return nil, fmt.Errorf("fetch audio URL failed: %w", err)
+		return nil, "", fmt.Errorf("fetch audio URL failed: %w", err)
 	}
 
 	log.Printf(" TikTok: Title=%s, Author=%s", title, author)
 
 	tmpDir, err := os.MkdirTemp("", "aether-tiktok-audio-")
 	if err != nil {
-		return nil, fmt.Errorf("create temp directory failed: %w", err)
+		return nil, "", fmt.Errorf("create temp directory failed: %w", err)
 	}
 
 	filePath, err := tp.downloadAudioFile(ctx, audioURL, tmpDir, title)
 	if err != nil {
 		os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("download audio file failed: %w", err)
+		return nil, "", fmt.Errorf("download audio file failed: %w", err)
 	}
 
 	log.Printf(" TikTok: Audio downloaded successfully: %s", filePath)
-	return []string{filePath}, nil
+	return []string{filePath}, title, nil
 }
 
 func (tp *TikTokProvider) fetchVideoData(ctx context.Context, tiktokURL string) (*TikWMResponse, error) {
