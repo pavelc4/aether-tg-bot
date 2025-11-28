@@ -104,7 +104,7 @@ func (h *Handler) handleStart(ctx context.Context, msg *tg.Message, entities tg.
 	if err != nil {
 		return err
 	}
-	_, err = h.Sender.To(peer).Text(ctx, "👋 *Welcome to Aether Bot (Gotd Edition)!*\n\nSend me a link from TikTok, Instagram, YouTube, etc. to download.")
+	_, err = h.Sender.To(peer).Text(ctx, "👋 Welcome to Aether Bot (Gotd Edition)!\n\nSend me a link from TikTok, Instagram, YouTube, etc. to download.")
 	return err
 }
 
@@ -114,28 +114,28 @@ func (h *Handler) handleHelp(ctx context.Context, msg *tg.Message, entities tg.E
 		return err
 	}
 	helpText := `
-*Aether Downloader Bot*
+		Aether Downloader Bot
 
-I can help you download media from various platforms.
+		I can help you download media from various platforms.
 
-*Available Commands:*
-• /dl [URL] - Download content
-• /mp [URL] - Download audio only
-• /video [URL] - Download video only
-• /start - Start the bot
-• /help - Show this help message
-• /stats - Show bot statistics (owner only)
+		Available Commands:
+		• /dl [URL] - Download content
+		• /mp [URL] - Download audio only
+		• /video [URL] - Download video only
+		• /start - Start the bot
+		• /help - Show this help message
+		• /stats - Show bot statistics (owner only)
 
-*Quick Tips:*
-• Just send a URL to download video
-• Bot uses Cobalt API first, then falls back to yt-dlp
-• Multithreaded downloads with 16 concurrent threads
-• Real-time progress tracking
+		Quick Tips:
+		• Just send a URL to download video
+		• Bot uses Cobalt API first, then falls back to yt-dlp
+		• Multithreaded downloads with 16 concurrent threads
+		• Real-time progress tracking
 
-*Supported Platforms:*
-YouTube, TikTok, Instagram, X, and more!
+		Supported Platforms:
+		YouTube, TikTok, Instagram, X, and more!
 
-Fun fact: This bot is written in Go 🐹
+		Fun fact: This bot is written in Go 🐹
     `
 
 	markup := tg.ReplyInlineMarkup{
@@ -144,7 +144,7 @@ Fun fact: This bot is written in Go 🐹
 				Buttons: []tg.KeyboardButtonClass{
 					&tg.KeyboardButtonURL{
 						Text: "Developer",
-						URL:  "https://t.me/pavelc4",
+						URL:  "https://t.me/pavellc",
 					},
 					&tg.KeyboardButtonURL{
 						Text: "Source",
@@ -266,36 +266,36 @@ func (h *Handler) handleStats(ctx context.Context, msg *tg.Message, entities tg.
 	}
 
 	statsMsg := fmt.Sprintf(
-		"🖥️ *System Information*\n"+
-			"├─ *OS:* `%s`\n"+
-			"├─ *Hostname:* `%s`\n"+
-			"└─ *Uptime:* `%s`\n\n"+
-			"⚙️ *CPU*\n"+
-			"├─ *Cores:* `%d`\n"+
-			"└─ *Usage:* `%.2f%%`\n\n"+
-			"💾 *Memory*\n"+
-			"├─ *Used:* `%s / %s (%.1f%%)`\n"+
-			"└─ *Available:* `%s`\n\n"+
-			"💿 *Disk (/)*\n"+
-			"├─ *Used:* `%s / %s (%.1f%%)`\n"+
-			"└─ *Free:* `%s`\n\n"+
-			"🌐 *Network*\n"+
-			"├─ *Sent:* `%s`\n"+
-			"└─ *Received:* `%s`\n\n"+
-			"🐹 *Bot Process*\n"+
-			"├─ *Uptime:* `%s`\n"+
-			"├─ *PID:* `%d`\n"+
-			"├─ *CPU:* `%.2f%%`\n"+
-			"├─ *Memory:* `%s`\n"+
-			"└─ *Go Version:* `%s`\n\n"+
-			"🔧 *Go Runtime*\n"+
-			"├─ *Goroutines:* `%d`\n"+
-			"├─ *Heap Alloc:* `%s`\n"+
-			"└─ *GC Runs:* `%d`\n\n"+
-			"📊 *Download Stats*\n"+
-			"├─ *Today:* `%s`\n"+
-			"├─ *This Week:* `%s`\n"+
-			"└─ *This Month:* `%s`",
+		"🖥️ System Information\n"+
+			"├─ OS: `%s`\n"+
+			"├─ Hostname: `%s`\n"+
+			"└─ Uptime: `%s`\n\n"+
+			"⚙️ CPU\n"+
+			"├─ Cores: `%d`\n"+
+			"└─ Usage: `%.2f%%`\n\n"+
+			"💾 Memory\n"+
+			"├─ Used: `%s / %s (%.1f%%)`\n"+
+			"└─ Available: `%s`\n\n"+
+			"💿 Disk (/)\n"+
+			"├─ Used: `%s / %s (%.1f%%)`\n"+
+			"└─ Free: `%s`\n\n"+
+			"🌐 Network\n"+
+			"├─ Sent: `%s`\n"+
+			"└─ Received: `%s`\n\n"+
+			"🐹 Bot Process\n"+
+			"├─ Uptime: `%s`\n"+
+			"├─ PID: `%d`\n"+
+			"├─ CPU: `%.2f%%`\n"+
+			"├─ Memory: `%s`\n"+
+			"└─ Go Version: `%s`\n\n"+
+			"🔧 Go Runtime\n"+
+			"├─ Goroutines: `%d`\n"+
+			"├─ Heap Alloc: `%s`\n"+
+			"└─ GC Runs: `%d`\n\n"+
+			"📊 Download Stats\n"+
+			"├─ Today: `%s`\n"+
+			"├─ This Week: `%s`\n"+
+			"└─ This Month: `%s`",
 		sysInfo.OS,
 		sysInfo.Hostname,
 		formatUptime(sysInfo.SystemUptime),
@@ -432,7 +432,7 @@ func (h *Handler) handleDownload(ctx context.Context, msg *tg.Message, entities 
 	displayProvider := providerName
 	if strings.Contains(url, "instagram.com") {
 		displayProvider = "Instagram"
-	} else if strings.Contains(url, "youtu") {
+	} else if strings.Contains(url, "youtube.com") {
 		displayProvider = "YouTube"
 	} else if strings.Contains(url, "tiktok.com") {
 		displayProvider = "TikTok"
@@ -459,7 +459,6 @@ func (h *Handler) handleDownload(ctx context.Context, msg *tg.Message, entities 
 		})
 		if delErr != nil {
 			log.Printf("Failed to delete uploading message: %v", delErr)
-			// If delete fails, edit to completion message
 			if err == nil {
 				h.Client.API().MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 					Peer:    peer,
