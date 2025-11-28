@@ -6,5 +6,5 @@ dump
 *.txt
 .env
 data
-cookie
+cookies
 bin
