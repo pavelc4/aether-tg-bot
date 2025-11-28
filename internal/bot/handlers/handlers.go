@@ -19,11 +19,6 @@ import (
 	"github.com/pavelc4/aether-tg-bot/internal/stats"
 )
 
-type Handler struct {
-	Client *telegram.Client
-	Sender *message.Sender
-}
-
 func NewHandler(client *telegram.Client) *Handler {
 	return &Handler{
 		Client: client,
