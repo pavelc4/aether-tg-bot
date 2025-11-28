@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -46,7 +47,6 @@ func (h *Handler) Register(dispatcher tg.UpdateDispatcher) {
 			return h.handleStats(ctx, msg, entities)
 		}
 
-		// Handle URL (Download)
 		// Handle URL (Download)
 		if strings.HasPrefix(msg.Message, "http") {
 			return h.handleDownload(ctx, msg, entities, msg.Message, false)
@@ -92,6 +92,11 @@ func resolvePeer(entities tg.Entities, peer tg.PeerClass) (tg.InputPeerClass, er
 	}
 }
 
+func isValidURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	return err == nil && u.Scheme != "" && u.Host != ""
+}
+
 func (h *Handler) handleStart(ctx context.Context, msg *tg.Message, entities tg.Entities) error {
 	peer, err := resolvePeer(entities, msg.PeerID)
 	if err != nil {
@@ -106,8 +111,7 @@ func (h *Handler) handleHelp(ctx context.Context, msg *tg.Message, entities tg.E
 	if err != nil {
 		return err
 	}
-	helpText :=
-		`
+	helpText := `
 *Aether Downloader Bot*
 
 I can help you download media from various platforms.
@@ -119,7 +123,6 @@ I can help you download media from various platforms.
 • /start - Start the bot
 • /help - Show this help message
 • /stats - Show bot statistics (owner only)
-• /speedtest - Test internet speed (owner only)
 
 *Quick Tips:*
 • Just send a URL to download video
@@ -131,7 +134,7 @@ I can help you download media from various platforms.
 YouTube, TikTok, Instagram, X, and more!
 
 Fun fact: This bot is written in Go 🐹
-		`
+    `
 
 	markup := tg.ReplyInlineMarkup{
 		Rows: []tg.KeyboardButtonRow{
@@ -161,10 +164,21 @@ func (h *Handler) handleDL(ctx context.Context, msg *tg.Message, entities tg.Ent
 		if err != nil {
 			return err
 		}
-		_, err = h.Sender.To(peer).Text(ctx, "Usage: /dl <url>")
+		_, err = h.Sender.To(peer).Text(ctx, "❌ Usage: /dl <url>\n\nExample: /dl https://youtu.be/example")
 		return err
 	}
-	return h.handleDownload(ctx, msg, entities, parts[1], false)
+
+	targetURL := parts[1]
+	if !isValidURL(targetURL) {
+		peer, err := resolvePeer(entities, msg.PeerID)
+		if err != nil {
+			return err
+		}
+		_, err = h.Sender.To(peer).Text(ctx, "❌ Invalid URL format. Please provide a valid URL.")
+		return err
+	}
+
+	return h.handleDownload(ctx, msg, entities, targetURL, false)
 }
 
 func (h *Handler) handleMP(ctx context.Context, msg *tg.Message, entities tg.Entities) error {
@@ -174,10 +188,21 @@ func (h *Handler) handleMP(ctx context.Context, msg *tg.Message, entities tg.Ent
 		if err != nil {
 			return err
 		}
-		_, err = h.Sender.To(peer).Text(ctx, "Usage: /mp <url>")
+		_, err = h.Sender.To(peer).Text(ctx, "❌ Usage: /mp <url>\n\nExample: /mp https://youtu.be/example")
 		return err
 	}
-	return h.handleDownload(ctx, msg, entities, parts[1], true)
+
+	targetURL := parts[1]
+	if !isValidURL(targetURL) {
+		peer, err := resolvePeer(entities, msg.PeerID)
+		if err != nil {
+			return err
+		}
+		_, err = h.Sender.To(peer).Text(ctx, "❌ Invalid URL format. Please provide a valid URL.")
+		return err
+	}
+
+	return h.handleDownload(ctx, msg, entities, targetURL, true)
 }
 
 func (h *Handler) handleVideo(ctx context.Context, msg *tg.Message, entities tg.Entities) error {
@@ -187,23 +212,39 @@ func (h *Handler) handleVideo(ctx context.Context, msg *tg.Message, entities tg.
 		if err != nil {
 			return err
 		}
-		_, err = h.Sender.To(peer).Text(ctx, "Usage: /video <url>")
+		_, err = h.Sender.To(peer).Text(ctx, "❌ Usage: /video <url>\n\nExample: /video https://youtu.be/example")
 		return err
 	}
-	return h.handleDownload(ctx, msg, entities, parts[1], false)
+
+	targetURL := parts[1]
+	if !isValidURL(targetURL) {
+		peer, err := resolvePeer(entities, msg.PeerID)
+		if err != nil {
+			return err
+		}
+		_, err = h.Sender.To(peer).Text(ctx, "❌ Invalid URL format. Please provide a valid URL.")
+		return err
+	}
+
+	return h.handleDownload(ctx, msg, entities, targetURL, false)
 }
 
 func (h *Handler) handleStats(ctx context.Context, msg *tg.Message, entities tg.Entities) error {
 	ownerIDStr := os.Getenv("OWNER_ID")
 	if ownerIDStr == "" {
+		return nil // Silently ignore if no owner configured
+	}
+
+	ownerID, err := strconv.ParseInt(ownerIDStr, 10, 64)
+	if err != nil {
+		log.Printf("Invalid OWNER_ID format: %v", err)
 		return nil
 	}
 
-	ownerID, _ := strconv.ParseInt(ownerIDStr, 10, 64)
-
+	// Check authorization
 	if peer, ok := msg.PeerID.(*tg.PeerUser); ok {
 		if int64(peer.UserID) != ownerID {
-			return nil
+			return nil // Silently ignore non-owners
 		}
 	} else {
 		return nil
@@ -217,7 +258,8 @@ func (h *Handler) handleStats(ctx context.Context, msg *tg.Message, entities tg.
 	s := stats.GetStats()
 	sysInfo, err := stats.GetSystemInfo()
 	if err != nil {
-		_, textErr := h.Sender.To(peer).Text(ctx, fmt.Sprintf("❌ Failed to get system info: %v", err))
+		errMsg := fmt.Sprintf("❌ Failed to get system info: %v", err)
+		_, textErr := h.Sender.To(peer).Text(ctx, errMsg)
 		return textErr
 	}
 
@@ -310,13 +352,19 @@ func (h *Handler) handleDownload(ctx context.Context, msg *tg.Message, entities 
 		return err
 	}
 
+	// Validate URL
+	if !isValidURL(url) {
+		_, err = h.Sender.To(peer).Text(ctx, "❌ Invalid URL format. Please provide a valid URL.")
+		return err
+	}
+
 	// Send "Processing..."
 	updates, err := h.Sender.To(peer).Text(ctx, "⏳ Processing...")
 	if err != nil {
 		return err
 	}
 
-	msgID, ok := getMsgID(updates)
+	msgID, hasMsgID := getMsgID(updates)
 
 	// Track user
 	if userPeer, ok := msg.PeerID.(*tg.PeerUser); ok {
@@ -324,46 +372,71 @@ func (h *Handler) handleDownload(ctx context.Context, msg *tg.Message, entities 
 	}
 
 	// Download
-	// Note: We pass nil for botAPI/progress for now until we adapt the downloader
 	filePaths, _, providerName, err := downloader.UniversalDownload(url, audioOnly, 0)
 	if err != nil {
-		if ok {
+		errMsg := fmt.Sprintf("❌ Error: %v", err)
+		if hasMsgID {
 			_, editErr := h.Client.API().MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:    peer,
 				ID:      msgID,
-				Message: fmt.Sprintf("❌ Error: %v", err),
+				Message: errMsg,
 			})
 			if editErr != nil {
 				log.Printf("Failed to edit error message: %v", editErr)
+				// Fallback: send new message
+				h.Sender.To(peer).Text(ctx, errMsg)
 			}
 		} else {
-			h.Sender.To(peer).Text(ctx, fmt.Sprintf("❌ Error: %v", err))
+			h.Sender.To(peer).Text(ctx, errMsg)
 		}
 		return err
 	}
 	defer core.CleanupFiles(filePaths)
 
-	// Delete processing message or Edit to Uploading
-	if ok {
+	// Update to "Uploading..."
+	if hasMsgID {
 		_, editErr := h.Client.API().MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 			Peer:    peer,
 			ID:      msgID,
 			Message: "🚀 Uploading...",
 		})
 		if editErr != nil {
-			log.Printf("Failed to edit uploading message: %v", editErr)
+			log.Printf("Failed to edit to uploading message: %v", editErr)
 		}
 	}
 
 	// Upload files
-	for _, filePath := range filePaths {
-		caption := fmt.Sprintf("✅ Downloaded via %s", providerName)
+	caption := fmt.Sprintf("✅ Downloaded via %s", providerName)
+	if len(filePaths) > 1 {
+		caption += fmt.Sprintf(" (%d files)", len(filePaths))
+	}
 
-		err = SendMedia(ctx, h.Client, peer, filePath, caption)
-		if err != nil {
-			log.Printf("Upload failed: %v", err)
-			h.Sender.To(peer).Text(ctx, fmt.Sprintf("❌ Upload failed: %v", err))
+	err = SendFiles(ctx, h.Client, peer, filePaths, caption)
+
+	// Delete the "Uploading..." message after upload attempt
+	if hasMsgID {
+		_, delErr := h.Client.API().MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
+			ID:     []int{msgID},
+			Revoke: true,
+		})
+		if delErr != nil {
+			log.Printf("Failed to delete uploading message: %v", delErr)
+			// If delete fails, edit to completion message
+			if err == nil {
+				h.Client.API().MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
+					Peer:    peer,
+					ID:      msgID,
+					Message: "✅ Upload complete!",
+				})
+			}
 		}
+	}
+
+	if err != nil {
+		log.Printf("Upload failed: %v", err)
+		errMsg := fmt.Sprintf("❌ Upload failed: %v", err)
+		h.Sender.To(peer).Text(ctx, errMsg)
+		return err
 	}
 
 	stats.TrackDownload()
