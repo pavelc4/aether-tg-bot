@@ -15,184 +15,155 @@ import (
 	"github.com/gotd/td/tg"
 )
 
-// SendFiles sends multiple files, grouping them by type and chunking them into albums.
-// It supports styled captions.
 func SendFiles(ctx context.Context, client *telegram.Client, peer tg.InputPeerClass, filePaths []string, caption []styling.StyledTextOption) error {
 	if len(filePaths) == 0 {
 		return nil
 	}
 
-	var photos []string
-	var videos []string
-	var audios []string
-	var docs []string
+	groups := map[string][]string{
+		"photos": {},
+		"videos": {},
+		"audios": {},
+		"docs":   {},
+	}
 
 	for _, path := range filePaths {
 		ext := strings.ToLower(filepath.Ext(path))
-		switch ext {
-		case ".jpg", ".jpeg", ".png", ".webp":
-			photos = append(photos, path)
-		case ".mp4", ".webm", ".mkv":
-			videos = append(videos, path)
-		case ".mp3", ".m4a", ".ogg", ".flac", ".wav", ".opus":
-			audios = append(audios, path)
-		default:
-			docs = append(docs, path)
+		grp, ok := extGroups[ext]
+		if !ok {
+			grp = "docs"
 		}
+		groups[grp] = append(groups[grp], path)
 	}
 
-	// Helper to send a group of files as an album
-	sendAlbumGroup := func(files []string, isFirstGroup bool) error {
-		chunkSize := 10
-		for i := 0; i < len(files); i += chunkSize {
-			end := i + chunkSize
-			if end > len(files) {
-				end = len(files)
-			}
-			batch := files[i:end]
-
-			// Attach caption only to the very first batch of the very first group
-			var batchCaption []styling.StyledTextOption
-			if isFirstGroup && i == 0 {
-				batchCaption = caption
-			}
-
-			if err := sendBatch(ctx, client, peer, batch, batchCaption); err != nil {
-				return err
-			}
-		}
-		return nil
+	order := []fileGroup{
+		{"photos", groups["photos"]},
+		{"videos", groups["videos"]},
+		{"audios", groups["audios"]},
+		{"docs", groups["docs"]},
 	}
 
-	// Helper to send files individually (for videos to avoid MEDIA_EMPTY)
-	sendIndividual := func(files []string, isFirstGroup bool) error {
-		u := uploader.NewUploader(client.API())
-		sender := message.NewSender(client.API())
+	first := true
 
-		for i, path := range files {
-			info, err := os.Stat(path)
-			if err != nil || info.Size() == 0 {
-				continue
-			}
-
-			log.Printf("Uploading video %d/%d: %s...", i+1, len(files), filepath.Base(path))
-			file, err := u.FromPath(ctx, path)
-			if err != nil {
-				log.Printf("Failed to upload %s: %v", path, err)
-				continue
-			}
-
-			var opts []styling.StyledTextOption
-			if isFirstGroup && i == 0 {
-				opts = caption
-			}
-
-			log.Printf("Sending video %s...", filepath.Base(path))
-			_, err = sender.To(peer).Video(ctx, file, opts...)
-			if err != nil {
-				log.Printf("Failed to send video %s: %v", path, err)
-				return err
-			}
+	for _, g := range order {
+		if len(g.files) == 0 {
+			continue
 		}
-		return nil
-	}
 
-	// Send in order: Photos (Album), Videos (Individual), Audios (Album), Docs (Album)
-	// Caption goes to the first non-empty group
-	firstSent := false
+		var err error
 
-	if len(photos) > 0 {
-		if err := sendAlbumGroup(photos, !firstSent); err != nil {
+		attachCaption := first
+		if g.name == "videos" {
+			err = sendIndividualVideos(ctx, client, peer, g.files, caption, attachCaption)
+		} else {
+			err = sendAlbumGroup(ctx, client, peer, g.files, caption, attachCaption)
+		}
+
+		if err != nil {
 			return err
 		}
-		firstSent = true
-	}
-	if len(videos) > 0 {
-		// Send videos individually
-		if err := sendIndividual(videos, !firstSent); err != nil {
-			return err
-		}
-		firstSent = true
-	}
-	if len(audios) > 0 {
-		if err := sendAlbumGroup(audios, !firstSent); err != nil {
-			return err
-		}
-		firstSent = true
-	}
-	if len(docs) > 0 {
-		if err := sendAlbumGroup(docs, !firstSent); err != nil {
-			return err
-		}
-		firstSent = true
+		first = false
 	}
 
 	return nil
 }
 
-func sendBatch(ctx context.Context, client *telegram.Client, peer tg.InputPeerClass, filePaths []string, caption []styling.StyledTextOption) error {
-	sender := message.NewSender(client.API())
+func sendAlbumGroup(ctx context.Context, client *telegram.Client, peer tg.InputPeerClass, files []string, caption []styling.StyledTextOption, withCaption bool) error {
+	chunk := 10
+	for i := 0; i < len(files); i += chunk {
+		end := i + chunk
+		if end > len(files) {
+			end = len(files)
+		}
+
+		batch := files[i:end]
+		var capUse []styling.StyledTextOption
+
+		if withCaption && i == 0 {
+			capUse = caption
+		}
+
+		if err := sendBatch(ctx, client, peer, batch, capUse); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func sendIndividualVideos(ctx context.Context, client *telegram.Client, peer tg.InputPeerClass, files []string, caption []styling.StyledTextOption, withCaption bool) error {
 	u := uploader.NewUploader(client.API())
+	sender := message.NewSender(client.API())
+
+	for i, path := range files {
+		info, err := os.Stat(path)
+		if err != nil || info.Size() == 0 {
+			continue
+		}
+
+		file, err := u.FromPath(ctx, path)
+		if err != nil {
+			log.Printf("Upload failed: %s", err)
+			continue
+		}
+
+		var opts []styling.StyledTextOption
+		if withCaption && i == 0 {
+			opts = caption
+		}
+
+		_, err = sender.To(peer).Video(ctx, file, opts...)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sendBatch(ctx context.Context, client *telegram.Client, peer tg.InputPeerClass, filePaths []string, caption []styling.StyledTextOption) error {
+	u := uploader.NewUploader(client.API())
+	sender := message.NewSender(client.API())
+
 	var items []message.MultiMediaOption
 
-	for i, filePath := range filePaths {
-		info, err := os.Stat(filePath)
+	for i, p := range filePaths {
+		info, err := os.Stat(p)
+		if err != nil || info.Size() == 0 {
+			continue
+		}
+
+		file, err := u.FromPath(ctx, p)
 		if err != nil {
-			log.Printf("Failed to stat %s: %v", filePath, err)
-			continue
-		}
-		if info.Size() == 0 {
-			log.Printf("Skipping empty file: %s", filePath)
 			continue
 		}
 
-		log.Printf("Uploading album item %d/%d: %s (Size: %d bytes)...", i+1, len(filePaths), filepath.Base(filePath), info.Size())
+		name := filepath.Base(p)
+		ext := strings.ToLower(filepath.Ext(p))
 
-		file, err := u.FromPath(ctx, filePath)
-		if err != nil {
-			log.Printf("Failed to upload %s: %v", filePath, err)
-			continue
-		}
-
-		fileName := filepath.Base(filePath)
-		ext := strings.ToLower(filepath.Ext(filePath))
-
-		// Only add caption to the first item
-		var itemCaption []styling.StyledTextOption
-		if i == 0 && len(caption) > 0 {
-			itemCaption = caption
+		var capUse []styling.StyledTextOption
+		if i == 0 {
+			capUse = caption
 		}
 
 		switch ext {
 		case ".mp4", ".webm", ".mkv":
-			// Video: Use UploadedDocument with explicit attributes to avoid MEDIA_EMPTY
-			items = append(items, message.UploadedDocument(file, itemCaption...).
-				MIME("video/mp4").
-				Attributes(&tg.DocumentAttributeVideo{
-					SupportsStreaming: true,
-				}).
-				Filename(fileName),
+			items = append(items,
+				message.UploadedDocument(file, capUse...).
+					MIME("video/mp4").
+					Attributes(&tg.DocumentAttributeVideo{SupportsStreaming: true}).
+					Filename(name),
 			)
-
 		case ".jpg", ".jpeg", ".png", ".webp":
-			// Photo
-			items = append(items, message.UploadedPhoto(file, itemCaption...))
-
+			items = append(items, message.UploadedPhoto(file, capUse...))
 		case ".mp3", ".m4a", ".ogg", ".flac", ".wav", ".opus":
-			// Audio
-			items = append(items, message.UploadedDocument(file, itemCaption...).
-				MIME("audio/mpeg").
-				Attributes(&tg.DocumentAttributeAudio{
-					Voice: false,
-				}).
-				Filename(fileName),
+			items = append(items,
+				message.UploadedDocument(file, capUse...).
+					MIME("audio/mpeg").
+					Attributes(&tg.DocumentAttributeAudio{}).
+					Filename(name),
 			)
-
 		default:
-			// Document
-			items = append(items, message.UploadedDocument(file, itemCaption...).
-				Filename(fileName),
-			)
+			items = append(items, message.UploadedDocument(file, capUse...).Filename(name))
 		}
 	}
 
@@ -200,7 +171,6 @@ func sendBatch(ctx context.Context, client *telegram.Client, peer tg.InputPeerCl
 		return fmt.Errorf("no media to send")
 	}
 
-	log.Printf("Sending album with %d items...", len(items))
 	_, err := sender.To(peer).Album(ctx, items[0], items[1:]...)
 	return err
 }
