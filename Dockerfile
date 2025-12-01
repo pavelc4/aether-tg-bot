@@ -1,4 +1,8 @@
-FROM golang:tip-alpine3.22 AS builder
+FROM golang:1.25-alpine AS builder
+RUN apk update && apk add --no-cache \
+	ca-certificates \
+	git
+
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
@@ -23,18 +27,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache
 
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
-	-o /usr/local/bin/yt-dlp && \
-	chmod +x /usr/local/bin/yt-dlp
+	-o /usr/local/bin/yt-dlp && chmod +x /usr/local/bin/yt-dlp
 
 RUN groupadd -r appgroup && \
 	useradd -r -g appgroup -u 1000 -d /app -s /sbin/nologin -c "App user" appuser
 
 WORKDIR /app
 
-COPY --from=builder --chown=appuser:appgroup /app/aether-bot .
+COPY --from=builder --chown=appuser:appgroup /app/aether-bot /app/aether-bot
 
 RUN mkdir -p /app/data && \
-	chown -R appuser:appgroup /app/data
+	chown -R appuser:appgroup /app/data && \
+	chmod 755 /app/data
 
 RUN mkdir -p /tmp/aether && \
 	chown -R appuser:appgroup /tmp/aether
