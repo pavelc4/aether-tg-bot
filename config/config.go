@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -57,6 +59,7 @@ type Config struct {
 var currentConfig *Config
 
 func init() {
+	_ = godotenv.Load()
 	LoadConfig()
 }
 
