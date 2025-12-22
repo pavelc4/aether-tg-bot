@@ -58,7 +58,7 @@ func StartBot() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	log.Println("Starting Aether Bot (Gotd Edition)...")
+	log.Println("Starting Aether Bot ")
 
 	if err := client.Run(ctx, func(ctx context.Context) error {
 		// Authenticate
