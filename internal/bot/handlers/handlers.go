@@ -59,6 +59,9 @@ func (h *Handler) Register(dispatcher tg.UpdateDispatcher) {
 		if strings.HasPrefix(msg.Message, "/video") {
 			return h.handleVideo(ctx, msg, entities)
 		}
+		if strings.HasPrefix(msg.Message, "/speedtest") || strings.HasPrefix(msg.Message, "/sp") {
+			return h.handleSpeedtest(ctx, msg, entities)
+		}
 
 		return nil
 	})
@@ -99,7 +102,7 @@ func (h *Handler) handleStart(ctx context.Context, msg *tg.Message, entities tg.
 	if err != nil {
 		return err
 	}
-	_, err = h.Sender.To(peer).Text(ctx, "👋 Welcome to Aether Bot (Gotd Edition)!\n\nSend me a link from TikTok, Instagram, YouTube, etc. to download.")
+	_, err = h.Sender.To(peer).Text(ctx, "👋 Welcome to Aether Bot \n\nSend me a link from TikTok, Instagram, YouTube, etc. to download.")
 	return err
 }
 
