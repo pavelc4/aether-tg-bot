@@ -9,6 +9,7 @@ services:
       - COBALT_API=${COBALT_API:-http://cobalt:9000}
       - TELEGRAM_API_ID=${TELEGRAM_API_ID}
       - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - YTDLP_COOKIES=${YTDLP_COOKIES}
     volumes:
       - ./data:/app/data
       - ./cookies:/app/cookies
