@@ -1,57 +1,34 @@
 FROM golang:latest AS builder
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    git \
-    upx && \
-    rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
-
 COPY go.mod go.sum ./
-RUN go mod download && go mod verify
-
+RUN go mod download
 COPY . .
-
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-w -s -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')" \
     -trimpath \
-    -o aether-bot ./cmd/bot && \
-    upx --best --lzma ./aether-bot
+    -o aether-bot ./cmd/bot
 
-FROM debian:bookworm-slim
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    ffmpeg \
-    tzdata \
-    curl \
-    procps && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache
-
+FROM debian:bookworm-slim AS downloader
+RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
-    -o /usr/local/bin/yt-dlp && \
-    chmod +x /usr/local/bin/yt-dlp
+    -o /yt-dlp && chmod +x /yt-dlp
 
-RUN groupadd -r appgroup && \
-    useradd -r -g appgroup -u 1000 -d /app -s /sbin/nologin -c "App user" appuser
+RUN mkdir -p /data /cookies /downloads /tmp_aether && \
+    chmod 777 /data /cookies /downloads /tmp_aether
 
+FROM gcr.io/distroless/cc-debian12
+COPY --from=mwader/static-ffmpeg:6.0 /ffmpeg /usr/local/bin/
+COPY --from=mwader/static-ffmpeg:6.0 /ffprobe /usr/local/bin/
+COPY --from=downloader --chown=nonroot:nonroot /yt-dlp /usr/local/bin/yt-dlp
+COPY --from=builder --chown=nonroot:nonroot /app/aether-bot /app/aether-bot
+COPY --from=downloader --chown=nonroot:nonroot /data /app/data
+COPY --from=downloader --chown=nonroot:nonroot /cookies /app/cookies
+COPY --from=downloader --chown=nonroot:nonroot /downloads /app/downloads
+COPY --from=downloader --chown=nonroot:nonroot /tmp_aether /tmp/aether
+
+ENV PATH="/usr/local/bin:${PATH}"
+ENV HOME="/app"
+
+USER nonroot
 WORKDIR /app
-
-COPY --from=builder --chown=appuser:appgroup /app/aether-bot .
-
-RUN mkdir -p /app/data && \
-    chown -R appuser:appgroup /app/data && \
-    chmod 755 /app/data
-
-RUN mkdir -p /tmp/aether && \
-    chown -R appuser:appgroup /tmp/aether
-
-VOLUME ["/app/data"]
-
-USER appuser
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD ps aux | grep "[a]ether-bot" > /dev/null || exit 1
-
 CMD ["./aether-bot"]
