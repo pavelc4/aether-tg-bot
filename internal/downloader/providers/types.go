@@ -52,10 +52,11 @@ type TikWMResponse struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 	Data struct {
-		Play      string `json:"play"`
-		WmPlay    string `json:"wmplay"`
-		Music     string `json:"music"`
-		Title     string `json:"title"`
+		Play      string   `json:"play"`
+		WmPlay    string   `json:"wmplay"`
+		Music     string   `json:"music"`
+		Title     string   `json:"title"`
+		Images    []string `json:"images"`
 		MusicInfo struct {
 			Title  string `json:"title"`
 			Author string `json:"author"`

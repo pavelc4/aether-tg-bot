@@ -49,7 +49,24 @@ func (tp *TikTokProvider) downloadVideo(ctx context.Context, url string) ([]stri
 		return nil, "", fmt.Errorf("fetch video data failed: %w", err)
 	}
 
-	// Get video URL from response
+	if len(response.Data.Images) > 0 {
+		log.Printf(" TikTok: Detected SLIDESHOW (%d images)", len(response.Data.Images))
+
+		tmpDir, err := os.MkdirTemp("", "aether-tiktok-slides-")
+		if err != nil {
+			return nil, "", fmt.Errorf("create temp directory failed: %w", err)
+		}
+
+		imagePaths, err := tp.downloadImages(ctx, response.Data.Images, tmpDir)
+		if err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, "", fmt.Errorf("download images failed: %w", err)
+		}
+
+		return imagePaths, response.Data.Title, nil
+	}
+
+	// 2. Fallback to Video
 	videoURL := ""
 	if response.Data.Play != "" {
 		videoURL = response.Data.Play
@@ -76,6 +93,73 @@ func (tp *TikTokProvider) downloadVideo(ctx context.Context, url string) ([]stri
 
 	log.Printf(" TikTok: Video downloaded: %s", filePath)
 	return []string{filePath}, response.Data.Title, nil
+}
+
+func (tp *TikTokProvider) downloadImages(ctx context.Context, urls []string, tmpDir string) ([]string, error) {
+	var paths []string
+
+	// Limit concurrency to avoid flooding
+	// Simple sequential for now given TikTok slides usually < 35 images
+	for i, imgURL := range urls {
+		// Cleanup URL if needed
+		if !strings.HasPrefix(imgURL, "http") {
+			imgURL = "https://tikwm.com" + imgURL
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "GET", imgURL, nil)
+		if err != nil {
+			log.Printf("Failed to create request for image %d: %v", i, err)
+			continue
+		}
+
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+		resp, err := tp.client.Do(req)
+		if err != nil {
+			log.Printf("Failed to download image %d: %v", i, err)
+			continue
+		}
+		defer func() {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Failed to download image %d (status %d)", i, resp.StatusCode)
+			continue
+		}
+
+		// Determine extension from content-type or URL
+		ext := ".jpg"
+		if strings.Contains(imgURL, ".webp") {
+			ext = ".webp"
+		} else if strings.Contains(imgURL, ".png") {
+			ext = ".png"
+		}
+
+		filePath := filepath.Join(tmpDir, fmt.Sprintf("slide_%d%s", i+1, ext))
+		outFile, err := os.Create(filePath)
+		if err != nil {
+			log.Printf("Failed to create file for image %d: %v", i, err)
+			continue
+		}
+
+		_, err = io.Copy(outFile, resp.Body)
+		outFile.Close()
+		if err != nil {
+			log.Printf("Failed to save image %d: %v", i, err)
+			os.Remove(filePath)
+			continue
+		}
+
+		paths = append(paths, filePath)
+	}
+
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no images downloaded successfully")
+	}
+
+	return paths, nil
 }
 
 func (tp *TikTokProvider) downloadAudio(ctx context.Context, url string) ([]string, string, error) {
