@@ -17,6 +17,7 @@ import (
 	"github.com/pavelc4/aether-tg-bot/internal/downloader"
 	"github.com/pavelc4/aether-tg-bot/internal/downloader/core"
 	"github.com/pavelc4/aether-tg-bot/internal/stats"
+	"github.com/pavelc4/aether-tg-bot/pkg/utils"
 )
 
 func NewHandler(client *telegram.Client) *Handler {
@@ -371,9 +372,29 @@ func (h *Handler) handleDownload(ctx context.Context, msg *tg.Message, entities 
 		stats.TrackUser(int64(userPeer.UserID))
 	}
 
-	// Download
 	startTime := time.Now()
-	filePaths, totalSize, providerName, title, err := downloader.UniversalDownload(url, audioOnly, 0)
+
+	progressCallback := func(percent float64, eta string) {
+		if !hasMsgID {
+			return
+		}
+
+		progressMsg := fmt.Sprintf("⏳ Downloading...\n\n%s\n%.1f%%", utils.FormatProgressBar(percent), percent)
+		if eta != "" {
+			progressMsg += fmt.Sprintf(" (ETA: %s)", eta)
+		}
+
+		_, editErr := h.Client.API().MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
+			Peer:    peer,
+			ID:      msgID,
+			Message: progressMsg,
+		})
+		if editErr != nil {
+			log.Printf("Failed to update progress: %v", editErr)
+		}
+	}
+
+	filePaths, totalSize, providerName, title, err := downloader.UniversalDownloadWithProgress(url, audioOnly, 0, progressCallback)
 	duration := time.Since(startTime)
 
 	if err != nil {

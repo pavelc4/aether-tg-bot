@@ -13,9 +13,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pavelc4/aether-tg-bot/internal/downloader/core"
 )
+
+type ProgressCallback func(percent float64, eta string)
 
 func NewYouTubeProvider(useCookies bool) *YouTubeProvider {
 	return &YouTubeProvider{
@@ -33,6 +36,10 @@ func (yp *YouTubeProvider) CanHandle(url string) bool {
 }
 
 func (yp *YouTubeProvider) Download(ctx context.Context, url string, audioOnly bool) ([]string, string, error) {
+	return yp.DownloadWithProgress(ctx, url, audioOnly, nil)
+}
+
+func (yp *YouTubeProvider) DownloadWithProgress(ctx context.Context, url string, audioOnly bool, progressCb ProgressCallback) ([]string, string, error) {
 	log.Printf("YouTube: Starting download (audio=%v, cookies=%v)", audioOnly, yp.useCookies)
 
 	tmpDir, err := os.MkdirTemp("", "aether-youtube-")
@@ -57,7 +64,7 @@ func (yp *YouTubeProvider) Download(ctx context.Context, url string, audioOnly b
 		return nil, "", fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
-	go yp.trackProgress(stdoutPipe)
+	go yp.trackProgress(stdoutPipe, progressCb)
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -104,22 +111,36 @@ func (yp *YouTubeProvider) Download(ctx context.Context, url string, audioOnly b
 	return validFiles, title, nil
 }
 
-func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser) {
+func (yp *YouTubeProvider) trackProgress(stdoutPipe io.ReadCloser, progressCb ProgressCallback) {
 	defer stdoutPipe.Close()
 
 	scanner := bufio.NewScanner(stdoutPipe)
 	buf := make([]byte, 256*1024)
 	scanner.Buffer(buf, 256*1024)
 
-	lineCount := 0
+	var lastUpdate time.Time
+	const updateInterval = 8 * time.Second
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		lineCount++
 
 		if strings.Contains(line, "[download]") && strings.Contains(line, "%") {
 			matches := core.YTDLPProgressRegex.FindStringSubmatch(line)
 			if len(matches) > 1 {
-				log.Printf("YouTube Progress: %s%%", matches[1])
+				percent := parseFloat(matches[1])
+				log.Printf("YouTube Progress: %.1f%%", percent)
+
+				if progressCb != nil && time.Since(lastUpdate) >= updateInterval {
+					eta := ""
+					if strings.Contains(line, "ETA") {
+						etaParts := strings.Split(line, "ETA")
+						if len(etaParts) > 1 {
+							eta = strings.TrimSpace(strings.Fields(etaParts[1])[0])
+						}
+					}
+					progressCb(percent, eta)
+					lastUpdate = time.Now()
+				}
 			}
 		}
 	}
@@ -135,13 +156,15 @@ func (yp *YouTubeProvider) buildArgs(tmpDir string, audioOnly bool) []string {
 		"-f", format,
 		"-o", filepath.Join(tmpDir, "%(title)s.%(ext)s"),
 		"--no-playlist",
-		"--socket-timeout", "60",
+		"--socket-timeout", "30",
 		"--retries", "5",
 		"--fragment-retries", "5",
 		"--retry-sleep", "3",
 		"--abort-on-error",
 		"--no-warnings",
-		"-N", "16",
+		"-N", "32",
+		"--buffer-size", "64K",
+		"--http-chunk-size", "10M",
 		"--newline",
 		"--progress",
 	}

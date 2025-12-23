@@ -12,6 +12,10 @@ import (
 )
 
 func UniversalDownload(url string, audioOnly bool, userID int64) ([]string, int64, string, string, error) {
+	return UniversalDownloadWithProgress(url, audioOnly, userID, nil)
+}
+
+func UniversalDownloadWithProgress(url string, audioOnly bool, userID int64, progressCb providers.ProgressCallback) ([]string, int64, string, string, error) {
 	mediaType := "Video"
 	if audioOnly {
 		mediaType = "Audio"
@@ -34,7 +38,16 @@ func UniversalDownload(url string, audioOnly bool, userID int64) ([]string, int6
 
 		log.Printf("Trying %s provider (audioOnly=%v)", provider.Name(), audioOnly)
 
-		filePaths, title, err := provider.Download(ctx, url, audioOnly)
+		var filePaths []string
+		var title string
+		var err error
+
+		if ytProvider, ok := provider.(*providers.YouTubeProvider); ok && progressCb != nil {
+			filePaths, title, err = ytProvider.DownloadWithProgress(ctx, url, audioOnly, progressCb)
+		} else {
+			filePaths, title, err = provider.Download(ctx, url, audioOnly)
+		}
+
 		if err != nil {
 			log.Printf("%s failed: %v", provider.Name(), err)
 			lastErr = err
