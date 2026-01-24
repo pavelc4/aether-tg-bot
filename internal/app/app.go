@@ -22,8 +22,8 @@ func New() (*App, error) {
 	cfg := config.LoadConfig()
 
 	provider.Register(provider.NewCobalt())
-	provider.Register(provider.NewTikTok())
 	provider.Register(provider.NewYouTube())
+	provider.Register(provider.NewTikTok())
 
 
 	streamMgr := streaming.NewManager(streaming.Config{

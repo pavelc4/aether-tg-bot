@@ -41,15 +41,31 @@ func GetProvider(rawURL string) (Provider, error) {
 
 
 func Resolve(ctx context.Context, url string) (*VideoInfo, string, error) {
-	p, err := GetProvider(url)
-	if err != nil {
-		return nil, "", err
+	mu.RLock()
+	var targets []Provider
+	for _, p := range registry {
+		if p.Supports(url) {
+			targets = append(targets, p)
+		}
+	}
+	mu.RUnlock()
+
+	if len(targets) == 0 {
+		return nil, "", fmt.Errorf("no provider found for this URL")
 	}
 
-	info, err := p.GetVideoInfo(ctx, url)
-	if err != nil {
-		return nil, p.Name(), err
+	var lastErr error
+	for _, p := range targets {
+		info, err := p.GetVideoInfo(ctx, url)
+		if err == nil {
+			if info.URL == "" {
+				lastErr = fmt.Errorf("%s returned empty URL", p.Name())
+				continue
+			}
+			return info, p.Name(), nil
+		}
+		lastErr = fmt.Errorf("%s failed: %w", p.Name(), err)
 	}
 
-	return info, p.Name(), nil
+	return nil, "", lastErr
 }
