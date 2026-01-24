@@ -35,10 +35,25 @@ func (tp *TikTokProvider) Supports(url string) bool {
 	return strings.Contains(url, "tiktok.com") || strings.Contains(url, "vt.tiktok.com")
 }
 
-func (tp *TikTokProvider) GetVideoInfo(ctx context.Context, url string) ([]VideoInfo, error) {
+func (tp *TikTokProvider) GetVideoInfo(ctx context.Context, url string, opts Options) ([]VideoInfo, error) {
 	resp, err := tp.fetchData(ctx, url)
 	if err != nil {
 		return nil, err
+	}
+
+	if opts.AudioOnly && resp.Data.Music != "" {
+		musicURL := resp.Data.Music
+		if !strings.HasPrefix(musicURL, "http") {
+			musicURL = "https://tikwm.com" + musicURL
+		}
+		return []VideoInfo{{
+			URL:      musicURL,
+			FileName: fmt.Sprintf("tiktok_audio_%s.mp3", resp.Data.ID),
+			Title:    resp.Data.Title,
+			FileSize: 0,
+			MimeType: "audio/mpeg",
+			Duration: resp.Data.Duration,
+		}}, nil
 	}
 
 	videoURL := resp.Data.Play
