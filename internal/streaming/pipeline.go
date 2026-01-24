@@ -24,19 +24,23 @@ func NewPipeline(cfg Config, uploadFn func(context.Context, Chunk, int64) error,
 	}
 }
 
-func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamState) error {
+func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamState) (int, error) {
 	body, size, _, err := pkghttp.StreamRequest(ctx, input.URL, input.Headers)
 	if err != nil {
-		return fmt.Errorf("stream open failed: %w", err)
+		return 0, fmt.Errorf("stream open failed: %w", err)
 	}
 	defer body.Close()
 
 	if size > 0 {
 		state.mu.Lock()
 		state.TotalSize = size
-		state.TotalParts = int(size/p.config.ChunkSize) + 1
+		state.TotalParts = int(size/p.config.ChunkSize)
+		if size%p.config.ChunkSize != 0 {
+			state.TotalParts++
+		}
 		state.mu.Unlock()
 	}
+	
 	chunkChan := make(chan Chunk, p.config.BufferSize)
 	errChan := make(chan error, 1)
 	var wg sync.WaitGroup
@@ -86,6 +90,7 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 		}(i)
 	}
 
+	totalParts := 0
 	go func() {
 		defer close(chunkChan)
 		
@@ -106,6 +111,7 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 				select {
 				case chunkChan <- Chunk{PartNum: partNum, TotalParts: state.TotalParts, Data: buf[:n], Size: n}:
 					partNum++
+					totalParts = partNum
 				case <-ctx.Done():
 					return
 				}
@@ -128,12 +134,16 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 	wg.Wait()
 	select {
 	case err := <-errChan:
-		return err
+		return totalParts, err
 	default:
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return totalParts, ctx.Err()
 		}
 	}
 	
-	return nil
+	if totalParts == 0 {
+		return 0, fmt.Errorf("stream returned no data")
+	}
+
+	return totalParts, nil
 }
