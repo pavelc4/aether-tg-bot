@@ -39,7 +39,7 @@ func (cp *CobaltProvider) Supports(url string) bool {
 	return true
 }
 
-func (cp *CobaltProvider) GetVideoInfo(ctx context.Context, url string) (*VideoInfo, error) {
+func (cp *CobaltProvider) GetVideoInfo(ctx context.Context, url string) ([]VideoInfo, error) {
 	apiResp, err := cp.requestAPI(ctx, url)
 	if err != nil {
 		return nil, err
@@ -115,44 +115,52 @@ func (cp *CobaltProvider) requestAPI(ctx context.Context, mediaURL string) (*cob
 	return &cobaltResponse, nil
 }
 
-func (cp *CobaltProvider) parseResponse(resp *cobaltAPIResponse) (*VideoInfo, error) {
+func (cp *CobaltProvider) parseResponse(resp *cobaltAPIResponse) ([]VideoInfo, error) {
 	switch resp.Status {
 	case "tunnel", "redirect":
 		if resp.URL == "" {
 			return nil, fmt.Errorf("empty URL in cobalt response")
 		}
-		return &VideoInfo{
+		return []VideoInfo{{
 			URL:      resp.URL,
 			FileName: resp.Filename,
 			MimeType: guessMimeType(resp.Filename),
-		}, nil
+		}}, nil
 
 	case "picker":
-		if len(resp.Picker) == 0 {
-			return nil, fmt.Errorf("empty picker in cobalt response")
-		}
-		// TODO: Support album/multiple files
-		item := resp.Picker[0]
-		if item.URL == "" {
-			return nil, fmt.Errorf("empty URL in picker item")
-		}
-		filename := item.Filename
-		if filename == "" {
-			filename = resp.Filename
-		}
-		if filename == "" {
-			ext := ".jpg"
-			if item.Type == "video" {
-				ext = ".mp4"
-			}
-			filename = fmt.Sprintf("cobalt_%d%s", time.Now().Unix(), ext)
-		}
+if len(resp.Picker) == 0 {
+return nil, fmt.Errorf("empty picker in cobalt response")
+}
 
-		return &VideoInfo{
-			URL:      item.URL,
-			FileName: filename,
-			MimeType: guessMimeType(filename),
-		}, nil
+var results []VideoInfo
+for _, item := range resp.Picker {
+if item.URL == "" {
+continue
+}
+filename := item.Filename
+if filename == "" {
+filename = resp.Filename
+}
+if filename == "" {
+ext := ".jpg"
+if item.Type == "video" {
+ext = ".mp4"
+}
+filename = fmt.Sprintf("cobalt_%d_%d%s", time.Now().Unix(), len(results), ext)
+}
+
+results = append(results, VideoInfo{
+URL:	  item.URL,
+FileName: filename,
+MimeType: guessMimeType(filename),
+})
+}
+
+if len(results) == 0 {
+return nil, fmt.Errorf("no valid items found in picker")
+}
+
+return results, nil
 
 	case "error":
 		return nil, fmt.Errorf("cobalt API error: %s (%s)", resp.Error.Code, resp.Error.Context)
