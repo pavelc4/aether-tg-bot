@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gotd/td/telegram/message"
@@ -105,13 +106,19 @@ func (h *DownloadHandler) sendMedia(ctx context.Context, sender *message.Sender,
 		mime = "video/mp4" // Default
 	}
 
-	_, err := sender.To(peer).Reply(replyMsgID).Media(ctx, message.UploadedDocument(inputFile).
+	isImage := strings.HasPrefix(mime, "image/")
+	
+	upload := message.UploadedDocument(inputFile).
 		MIME(mime).
-		Filename(input.Filename).
-		Attributes(&tg.DocumentAttributeVideo{
+		Filename(input.Filename)
+
+	if !isImage {
+		upload = upload.Attributes(&tg.DocumentAttributeVideo{
 			SupportsStreaming: true,
-		}),
-	)
+		})
+	}
+
+	_, err := sender.To(peer).Reply(replyMsgID).Media(ctx, upload)
 
 	return err
 }

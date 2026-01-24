@@ -131,14 +131,23 @@ func (cp *CobaltProvider) parseResponse(resp *cobaltAPIResponse) (*VideoInfo, er
 		if len(resp.Picker) == 0 {
 			return nil, fmt.Errorf("empty picker in cobalt response")
 		}
+		// TODO: Support album/multiple files
 		item := resp.Picker[0]
 		if item.URL == "" {
 			return nil, fmt.Errorf("empty URL in picker item")
 		}
 		filename := item.Filename
 		if filename == "" {
-			filename = resp.Filename // Fallback to main filename
+			filename = resp.Filename
 		}
+		if filename == "" {
+			ext := ".jpg"
+			if item.Type == "video" {
+				ext = ".mp4"
+			}
+			filename = fmt.Sprintf("cobalt_%d%s", time.Now().Unix(), ext)
+		}
+
 		return &VideoInfo{
 			URL:      item.URL,
 			FileName: filename,
