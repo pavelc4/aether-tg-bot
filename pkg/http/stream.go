@@ -25,7 +25,9 @@ func StreamRequest(ctx context.Context, url string, headers map[string]string) (
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: DefaultTimeout,
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

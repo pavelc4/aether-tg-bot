@@ -7,7 +7,7 @@ import (
 
 	"github.com/gotd/td/telegram/message"
 	"github.com/gotd/td/tg"
-	"github.com/pavelc4/aether-tg-bot/config"
+
 	"github.com/pavelc4/aether-tg-bot/internal/provider"
 	"github.com/pavelc4/aether-tg-bot/internal/streaming"
 	"github.com/pavelc4/aether-tg-bot/internal/telegram"
@@ -78,26 +78,26 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 	progressFn := func(uploaded, total int64) {
 	}
 
-	err = h.streamMgr.Stream(ctx, input, uploadFn, progressFn)
+	var actualParts int
+	actualParts, err = h.streamMgr.Stream(ctx, input, uploadFn, progressFn)
 	
 	if err != nil {
 		editMsg(fmt.Sprintf("❌ Download failed: %v", err))
 		return err
 	}
-
-
-	return h.sendMedia(ctx, sender, inputPeer, input, fileID, sentMsgID)
+	if actualParts == 0 {
+		editMsg("❌ Download failed: stream returned no data")
+		return fmt.Errorf("stream returned no data")
+	}
+	return h.sendMedia(ctx, sender, inputPeer, input, fileID, sentMsgID, actualParts)
 }
 
-func (h *DownloadHandler) sendMedia(ctx context.Context, sender *message.Sender, peer tg.InputPeerClass, input streaming.StreamInput, fileID int64, replyMsgID int) error {
+func (h *DownloadHandler) sendMedia(ctx context.Context, sender *message.Sender, peer tg.InputPeerClass, input streaming.StreamInput, fileID int64, replyMsgID int, actualParts int) error {
 
 	inputFile := &tg.InputFileBig{
 		ID:    fileID,
-		Parts: int(input.Size/config.DefaultChunkSize),
+		Parts: actualParts,
 		Name:  input.Filename,
-	}
-	if input.Size%config.DefaultChunkSize != 0 {
-		inputFile.Parts++
 	}
 
 	mime := input.MIME
