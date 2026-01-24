@@ -40,7 +40,7 @@ func GetProvider(rawURL string) (Provider, error) {
 }
 
 
-func Resolve(ctx context.Context, url string) (*VideoInfo, string, error) {
+func Resolve(ctx context.Context, url string) ([]VideoInfo, string, error) {
 	mu.RLock()
 	var targets []Provider
 	for _, p := range registry {
@@ -56,13 +56,13 @@ func Resolve(ctx context.Context, url string) (*VideoInfo, string, error) {
 
 	var lastErr error
 	for _, p := range targets {
-		info, err := p.GetVideoInfo(ctx, url)
+		infos, err := p.GetVideoInfo(ctx, url)
 		if err == nil {
-			if info.URL == "" {
-				lastErr = fmt.Errorf("%s returned empty URL", p.Name())
+			if len(infos) == 0 || infos[0].URL == "" {
+				lastErr = fmt.Errorf("%s returned no media", p.Name())
 				continue
 			}
-			return info, p.Name(), nil
+			return infos, p.Name(), nil
 		}
 		lastErr = fmt.Errorf("%s failed: %w", p.Name(), err)
 	}

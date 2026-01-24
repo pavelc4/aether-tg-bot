@@ -16,5 +16,5 @@ type VideoInfo struct {
 type Provider interface {
 	Name() string
 	Supports(url string) bool
-	GetVideoInfo(ctx context.Context, url string) (*VideoInfo, error)
+	GetVideoInfo(ctx context.Context, url string) ([]VideoInfo, error)
 }
