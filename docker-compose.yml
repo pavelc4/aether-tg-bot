@@ -9,10 +9,6 @@ services:
       - COBALT_API=${COBALT_API:-http://cobalt:9000}
       - TELEGRAM_APP_ID=${TELEGRAM_APP_ID}
       - TELEGRAM_APP_HASH=${TELEGRAM_APP_HASH}
-    volumes:
-      - ./data:/app/data
-      - ./cookies:/app/cookies
-      - /tmp/aether:/tmp/aether
     depends_on:
       - cobalt
     networks:
