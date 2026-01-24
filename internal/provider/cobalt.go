@@ -178,7 +178,11 @@ func (cp *CobaltProvider) parseResponse(resp *cobaltAPIResponse) ([]VideoInfo, e
 }
 
 func guessMimeType(filename string) string {
-	ext := strings.ToLower(filepath.Ext(filename))
+	ext := filepath.Ext(filename)
+	if idx := strings.Index(ext, "?"); idx != -1 {
+		ext = ext[:idx]
+	}
+	ext = strings.ToLower(ext)
 	switch ext {
 	case ".mp4":
 		return "video/mp4"
@@ -188,6 +192,16 @@ func guessMimeType(filename string) string {
 		return "video/x-matroska"
 	case ".mp3":
 		return "audio/mpeg"
+	case ".m4a":
+		return "audio/mp4"
+	case ".ogg":
+		return "audio/ogg"
+	case ".wav":
+		return "audio/wav"
+	case ".opus":
+		return "audio/opus"
+	case ".flac":
+		return "audio/flac"
 	case ".jpg", ".jpeg":
 		return "image/jpeg"
 	case ".png":
