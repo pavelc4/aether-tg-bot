@@ -7,6 +7,7 @@ import (
 	"github.com/gotd/td/tg"
 	"github.com/pavelc4/aether-tg-bot/internal/handler"
 	"github.com/pavelc4/aether-tg-bot/internal/provider"
+	"github.com/pavelc4/aether-tg-bot/pkg/logger"
 )
 
 type Router struct {
@@ -58,7 +59,11 @@ func (r *Router) OnMessage(ctx context.Context, e tg.Entities, update *tg.Update
 		parts := strings.Fields(text)
 		if len(parts) > 1 {
 			url := parts[1]
-			if provider.ExtractURL(url) != "" && provider.IsSupported(url) {
+			extracted := provider.ExtractURL(url)
+			supported := provider.IsSupported(url)
+			logger.Info("Checking /mp command", "url", url, "extracted", extracted, "supported", supported)
+			
+			if extracted != "" && supported {
 				return r.download.Handle(ctx, e, msg, url, true)
 			}
 		}
