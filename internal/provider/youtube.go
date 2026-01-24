@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -36,7 +37,7 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string) (*Video
 		"--dump-json",
 		"--no-playlist",
 		"--no-warnings",
-		"-f", "best[ext=mp4]/best", // Force progressive format for single-stream retrieval
+		"-f", "best[ext=mp4][protocol^=http]/best[protocol^=http]",
 		url,
 	}
 
@@ -64,37 +65,65 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string) (*Video
 	}
 
 	finalURL := meta.URL
-	if (finalURL == "" || isImageURL(finalURL)) && len(meta.Formats) > 0 {
+	if (finalURL == "" || isNonStreamableURL(finalURL)) && len(meta.Formats) > 0 {
 		// Find a valid video URL in formats
 		for _, f := range meta.Formats {
-			if f.URL != "" && f.VCodec != "none" && !isImageURL(f.URL) {
+			if f.URL != "" && f.VCodec != "none" && !isNonStreamableURL(f.URL) {
 				finalURL = f.URL
 				break
 			}
 		}
 	}
 
-	if finalURL == "" || isImageURL(finalURL) {
-		logger.Error("yt-dlp returned no valid video URL", "url", finalURL, "stderr", stderr.String())
+	if finalURL == "" || isNonStreamableURL(finalURL) {
+		logger.Error("yt-dlp returned no streamable video URL", "url", finalURL, "stderr", stderr.String())
 		return nil, fmt.Errorf("no streamable video URL found")
 	}
 
 	filename := fmt.Sprintf("%s.%s", meta.Title, meta.Ext)
 	filename = strings.ReplaceAll(filename, "/", "_")
 
+	size := meta.FileSize
+	if size == 0 {
+		size = meta.FileSizeApp
+	}
+
+	if size == 0 && finalURL != "" {
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		
+		req, _ := http.NewRequestWithContext(ctx, "HEAD", finalURL, nil)
+		for k, v := range meta.HttpHeaders {
+			req.Header.Set(k, v)
+		}
+		
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			size = resp.ContentLength
+			resp.Body.Close()
+		}
+	}
+
+	logger.Info("YouTube info resolved", "title", meta.Title, "size", size)
+
 	return &VideoInfo{
 		URL:      finalURL,
 		FileName: filename,
-		FileSize: meta.FileSize,
+		FileSize: size,
 		MimeType: "video/" + meta.Ext,
 		Duration: int(meta.Duration),
 		Headers:  meta.HttpHeaders,
 	}, nil
 }
 
-func isImageURL(url string) bool {
+func isNonStreamableURL(url string) bool {
 	lower := strings.ToLower(url)
-	return strings.Contains(lower, ".jpg") || strings.Contains(lower, ".jpeg") || strings.Contains(lower, ".png") || strings.Contains(lower, ".webp")
+	if strings.Contains(lower, ".jpg") || strings.Contains(lower, ".jpeg") || strings.Contains(lower, ".png") || strings.Contains(lower, ".webp") {
+		return true
+	}
+	if strings.Contains(lower, ".m3u8") || strings.Contains(lower, ".mpd") || strings.Contains(lower, "manifest") {
+		return true
+	}
+	return false
 }
 
 type ytdlpMeta struct {
