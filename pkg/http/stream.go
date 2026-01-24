@@ -25,8 +25,16 @@ func StreamRequest(ctx context.Context, url string, headers map[string]string) (
 		req.Header.Set(k, v)
 	}
 
+	transport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 20,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+	}
+
 	client := &http.Client{
-		Timeout: DefaultTimeout,
+		Transport: transport,
 	}
 
 	resp, err := client.Do(req)

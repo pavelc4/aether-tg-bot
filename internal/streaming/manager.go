@@ -35,10 +35,10 @@ func NewManager(cfg Config) *Manager {
 	}
 }
 
-func (m *Manager) Stream(ctx context.Context, input StreamInput, uploadFn func(context.Context, Chunk, int64) error, progressFn func(int64, int64)) (int, error) {
+func (m *Manager) Stream(ctx context.Context, input StreamInput, uploadFn func(context.Context, Chunk, int64) error, progressFn func(int64, int64)) (int, string, error) {
 	// 1. Acquire Resource
 	if err := m.resource.Acquire(ctx); err != nil {
-		return 0, fmt.Errorf("resource acquire failed: %w", err)
+		return 0, "", fmt.Errorf("resource acquire failed: %w", err)
 	}
 	defer m.resource.Release()
 
@@ -54,11 +54,11 @@ func (m *Manager) Stream(ctx context.Context, input StreamInput, uploadFn func(c
 
 	// 4. Start Pipeline
 	pipeline := NewPipeline(m.config, uploadFn, progressFn)
-	parts, err := pipeline.Start(ctx, input, state)
+	parts, md5sum, err := pipeline.Start(ctx, input, state)
 	
 	if err != nil {
 		logger.Error("Stream failed", "error", err)
-		return parts, err
+		return parts, "", err
 	}
 
 	state.mu.Lock()
@@ -66,5 +66,5 @@ func (m *Manager) Stream(ctx context.Context, input StreamInput, uploadFn func(c
 	state.mu.Unlock()
 
 	logger.Info("Stream completed", "file", input.Filename, "parts", parts)
-	return parts, nil
+	return parts, md5sum, nil
 }

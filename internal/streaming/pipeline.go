@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"context"
+	"crypto/md5"
 	"fmt"
 	"io"
 	"sync"
@@ -25,10 +26,10 @@ func NewPipeline(cfg Config, uploadFn func(context.Context, Chunk, int64) error,
 	}
 }
 
-func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamState) (int, error) {
+func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamState) (int, string, error) {
 	body, size, _, err := pkghttp.StreamRequest(ctx, input.URL, input.Headers)
 	if err != nil {
-		return 0, fmt.Errorf("stream open failed: %w", err)
+		return 0, "", fmt.Errorf("stream open failed: %w", err)
 	}
 	defer body.Close()
 
@@ -46,7 +47,7 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 		state.mu.Unlock()
 	} else {
 		logger.Error("Stream size unknown, MTProto upload would fail", "url", input.URL)
-		return 0, fmt.Errorf("unknown stream size (required for MTProto)")
+		return 0, "", fmt.Errorf("unknown stream size (required for MTProto)")
 	}
 	
 	chunkChan := make(chan Chunk, p.config.BufferSize)
@@ -99,9 +100,12 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 	}
 
 	totalParts := 0
+	md5Result := ""
+	
 	go func() {
 		defer close(chunkChan)
 		
+		hasher := md5.New()
 		partNum := 0
 		for {
 			if ctx.Err() != nil {
@@ -110,12 +114,14 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 
 			buf := buffer.Get()
 			if int64(len(buf)) != p.config.ChunkSize {
-				// Fallback if pool size doesn't match config
 				buf = make([]byte, p.config.ChunkSize)
 			}
 			
 			n, readErr := io.ReadFull(body, buf)
 			if n > 0 {
+				// Write to haser
+				hasher.Write(buf[:n])
+				
 				select {
 				case chunkChan <- Chunk{PartNum: partNum, TotalParts: state.TotalParts, Data: buf[:n], Size: n}:
 					partNum++
@@ -137,21 +143,22 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 				return
 			}
 		}
+		md5Result = fmt.Sprintf("%x", hasher.Sum(nil))
 	}()
 
 	wg.Wait()
 	select {
 	case err := <-errChan:
-		return totalParts, err
+		return totalParts, "", err
 	default:
 		if ctx.Err() != nil {
-			return totalParts, ctx.Err()
+			return totalParts, "", ctx.Err()
 		}
 	}
 	
 	if totalParts == 0 {
-		return 0, fmt.Errorf("stream returned no data")
+		return 0, "", fmt.Errorf("stream returned no data")
 	}
 
-	return totalParts, nil
+	return totalParts, md5Result, nil
 }
