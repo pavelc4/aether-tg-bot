@@ -56,6 +56,26 @@ func (tp *TikTokProvider) GetVideoInfo(ctx context.Context, url string, opts Opt
 		}}, nil
 	}
 
+	// Check for images (Slides) - THIS SHOULD BE THE PRIORITY
+	if len(resp.Data.Images) > 0 {
+		var results []VideoInfo
+		for i, imgURL := range resp.Data.Images {
+			// Ensure image URL is absolute
+			if !strings.HasPrefix(imgURL, "http") {
+				imgURL = "https://tikwm.com" + imgURL
+			}
+			results = append(results, VideoInfo{
+				URL:      imgURL,
+				FileName: fmt.Sprintf("tiktok_slide_%s_%d.jpg", resp.Data.ID, i),
+				Title:    resp.Data.Title,
+				MimeType: "image/jpeg",
+				Duration: 0,
+			})
+		}
+		return results, nil
+	}
+
+	// Only process video if no images found
 	videoURL := resp.Data.Play
 	if videoURL == "" {
 		return nil, fmt.Errorf("video URL not found in response")
@@ -64,29 +84,37 @@ func (tp *TikTokProvider) GetVideoInfo(ctx context.Context, url string, opts Opt
 		videoURL = "https://tikwm.com" + videoURL
 	}
 
+	mime := "video/mp4"
+	filename := fmt.Sprintf("tiktok_%s.mp4", resp.Data.ID)
+
+	if opts.AudioOnly {
+		mime = "audio/mp4"
+	}
+
 	return []VideoInfo{{
 		URL:      videoURL,
-		FileName: fmt.Sprintf("tiktok_%s.mp4", resp.Data.ID),
+		FileName: filename,
 		Title:    resp.Data.Title,
 		FileSize: int64(resp.Data.Size), // TikWM provides size
-		MimeType: "video/mp4",
+		MimeType: mime,
 		Duration: resp.Data.Duration,
 	}}, nil
 }
 
 type tikWMResponse struct {
-	Code int        `json:"code"`
-	Msg  string     `json:"msg"`
-	Data tikWMData  `json:"data"`
+	Code int       `json:"code"`
+	Msg  string    `json:"msg"`
+	Data tikWMData `json:"data"`
 }
 
 type tikWMData struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Play     string `json:"play"`    // Video URL
-	Music    string `json:"music"`   // Audio URL
-	Size     int    `json:"size"`
-	Duration int    `json:"duration"`
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Play     string   `json:"play"`   // Video URL
+	Music    string   `json:"music"`  // Audio URL
+	Images   []string `json:"images"` // Images for slides
+	Size     int      `json:"size"`
+	Duration int      `json:"duration"`
 }
 
 func (tp *TikTokProvider) fetchData(ctx context.Context, tiktokURL string) (*tikWMResponse, error) {
