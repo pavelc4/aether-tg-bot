@@ -8,6 +8,7 @@ import (
 
 	"github.com/pavelc4/aether-tg-bot/pkg/buffer"
 	pkghttp "github.com/pavelc4/aether-tg-bot/pkg/http"
+	"github.com/pavelc4/aether-tg-bot/pkg/logger"
 )
 
 type Pipeline struct {
@@ -31,14 +32,21 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 	}
 	defer body.Close()
 
+	if size <= 0 && input.Size > 0 {
+		size = input.Size
+	}
+
 	if size > 0 {
 		state.mu.Lock()
 		state.TotalSize = size
-		state.TotalParts = int(size/p.config.ChunkSize)
+		state.TotalParts = int(size / p.config.ChunkSize)
 		if size%p.config.ChunkSize != 0 {
 			state.TotalParts++
 		}
 		state.mu.Unlock()
+	} else {
+		logger.Error("Stream size unknown, MTProto upload would fail", "url", input.URL)
+		return 0, fmt.Errorf("unknown stream size (required for MTProto)")
 	}
 	
 	chunkChan := make(chan Chunk, p.config.BufferSize)

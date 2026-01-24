@@ -17,10 +17,15 @@ func NewUploader(api *tg.Client) *Uploader {
 }
 
 func (u *Uploader) UploadChunk(ctx context.Context, chunk streaming.Chunk, fileID int64) error {	
+	totalParts := chunk.TotalParts
+	if totalParts <= 0 {
+		totalParts = 0 
+	}
+
 	_, err := u.api.UploadSaveBigFilePart(ctx, &tg.UploadSaveBigFilePartRequest{
-		FileID:   fileID,
+		FileID:         fileID,
 		FilePart:       chunk.PartNum,
-		FileTotalParts: chunk.TotalParts,
+		FileTotalParts: totalParts,
 		Bytes:          chunk.Data,
 	})
 	
