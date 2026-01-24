@@ -32,7 +32,7 @@ func (yp *YouTubeProvider) Supports(url string) bool {
 	return strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") || strings.Contains(url, "tiktok.com")
 }
 
-func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string) (*VideoInfo, error) {
+func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string) ([]VideoInfo, error) {
 	args := []string{
 		"--dump-json",
 		"--no-playlist",
@@ -105,14 +105,14 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string) (*Video
 
 	logger.Info("YouTube info resolved", "title", meta.Title, "size", size)
 
-	return &VideoInfo{
+	return []VideoInfo{{
 		URL:      finalURL,
 		FileName: filename,
 		FileSize: size,
 		MimeType: "video/" + meta.Ext,
 		Duration: int(meta.Duration),
 		Headers:  meta.HttpHeaders,
-	}, nil
+	}}, nil
 }
 
 func isNonStreamableURL(url string) bool {

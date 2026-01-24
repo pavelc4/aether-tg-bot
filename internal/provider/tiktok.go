@@ -35,7 +35,7 @@ func (tp *TikTokProvider) Supports(url string) bool {
 	return strings.Contains(url, "tiktok.com") || strings.Contains(url, "vt.tiktok.com")
 }
 
-func (tp *TikTokProvider) GetVideoInfo(ctx context.Context, url string) (*VideoInfo, error) {
+func (tp *TikTokProvider) GetVideoInfo(ctx context.Context, url string) ([]VideoInfo, error) {
 	resp, err := tp.fetchData(ctx, url)
 	if err != nil {
 		return nil, err
@@ -49,13 +49,13 @@ func (tp *TikTokProvider) GetVideoInfo(ctx context.Context, url string) (*VideoI
 		videoURL = "https://tikwm.com" + videoURL
 	}
 
-	return &VideoInfo{
+	return []VideoInfo{{
 		URL:      videoURL,
 		FileName: fmt.Sprintf("tiktok_%s.mp4", resp.Data.ID),
 		FileSize: int64(resp.Data.Size), // TikWM provides size
 		MimeType: "video/mp4",
 		Duration: resp.Data.Duration,
-	}, nil
+	}}, nil
 }
 
 type tikWMResponse struct {
