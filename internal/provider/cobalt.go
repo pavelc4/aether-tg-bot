@@ -33,6 +33,9 @@ func (cp *CobaltProvider) Name() string {
 }
 
 func (cp *CobaltProvider) Supports(url string) bool {
+	if strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") {
+		return false
+	}
 	return true
 }
 
