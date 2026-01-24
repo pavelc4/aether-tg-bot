@@ -28,19 +28,31 @@ const (
 )
 
 const (
-	DefaultCobaltAPI         = "http://cobalt:9000"
-	DefaultYtdlpAPI          = "http://yt-dlp-api:8080"
-	DefaultTelegramAPI       = "http://localhost:8081"
-	DefaultMaxFileSize       = 50 // MB (Telegram limit)
-	DefaultEnableAdaptive    = true
-	DefaultUpdateTimeout     = 60
-	DefaultWorkerPoolSize    = 100
-	DefaultShutdownTimeout   = 30
-	DefaultProcessingTimeout = 10
+	DefaultCobaltAPI            = "http://cobalt:9000"
+	DefaultYtdlpAPI             = "http://yt-dlp-api:8080"
+	DefaultTelegramAPI          = "http://localhost:8081"
+	DefaultMaxFileSize          = 50 // MB (Telegram limit)
+	DefaultEnableAdaptive       = true
+	DefaultUpdateTimeout        = 60
+	DefaultWorkerPoolSize       = 100
+	DefaultShutdownTimeout      = 30
+	DefaultProcessingTimeout    = 10
+
+	// Streaming Defaults
+	DefaultMaxConcurrentStreams = 8
+	DefaultChunkSize            = 512 * 1024 // 512KB
+	DefaultBufferSize           = 5
+	DefaultUploadWorkers        = 3
+	DefaultRetryLimit           = 3
 )
 
 type Config struct {
-	BotToken          string
+	AppID      int
+	AppHash    string
+	BotToken   string
+	SessionDir string
+	TempDir    string
+	CookiesDir string
 	CobaltAPI         string
 	CobaltAPIKey      string
 	YtdlpAPI          string
@@ -65,7 +77,12 @@ func init() {
 
 func LoadConfig() *Config {
 	cfg := &Config{
+		AppID:             getIntEnv("TELEGRAM_APP_ID", 0),
+		AppHash:           os.Getenv("TELEGRAM_APP_HASH"),
 		BotToken:          os.Getenv(EnvBotToken),
+		SessionDir:        getEnvWithDefault("SESSION_DIR", "data"),
+		TempDir:           getEnvWithDefault("TEMP_DIR", "tmp"),
+		CookiesDir:        getEnvWithDefault("COOKIES_DIR", "cookies"),
 		CobaltAPI:         getEnvWithDefault(EnvCobaltAPI, DefaultCobaltAPI),
 		CobaltAPIKey:      os.Getenv(EnvCobaltAPIKey),
 		YtdlpAPI:          getEnvWithDefault(EnvYtdlpAPI, DefaultYtdlpAPI),

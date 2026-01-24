@@ -7,14 +7,8 @@ services:
       - BOT_TOKEN=${BOT_TOKEN}
       - OWNER_ID=${OWNER_ID}
       - COBALT_API=${COBALT_API:-http://cobalt:9000}
-      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
-      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
-      - YTDLP_COOKIES=${YTDLP_COOKIES}
-    volumes:
-      - ./data:/app/data
-      - ./cookies:/app/cookies
-      - ./downloads:/app/downloads
-      - /tmp/aether:/tmp/aether
+      - TELEGRAM_APP_ID=${TELEGRAM_APP_ID}
+      - TELEGRAM_APP_HASH=${TELEGRAM_APP_HASH}
     depends_on:
       - cobalt
     networks:
