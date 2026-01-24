@@ -17,8 +17,12 @@ type VideoInfo struct {
 	Headers  map[string]string // Required headers for the request (cookies, referer, etc.)
 }
 
+type Options struct {
+	AudioOnly bool
+}
+
 type Provider interface {
 	Name() string
 	Supports(url string) bool
-	GetVideoInfo(ctx context.Context, url string) ([]VideoInfo, error)
+	GetVideoInfo(ctx context.Context, url string, opts Options) ([]VideoInfo, error)
 }

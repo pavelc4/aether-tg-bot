@@ -32,12 +32,17 @@ func (yp *YouTubeProvider) Supports(url string) bool {
 	return strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") || strings.Contains(url, "tiktok.com")
 }
 
-func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string) ([]VideoInfo, error) {
+func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Options) ([]VideoInfo, error) {
+	formatArg := "best[ext=mp4][protocol^=http]/best[protocol^=http]"
+	if opts.AudioOnly {
+		formatArg = "bestaudio[ext=m4a]/bestaudio"
+	}
+
 	args := []string{
 		"--dump-json",
 		"--no-playlist",
 		"--no-warnings",
-		"-f", "best[ext=mp4][protocol^=http]/best[protocol^=http]",
+		"-f", formatArg,
 		url,
 	}
 

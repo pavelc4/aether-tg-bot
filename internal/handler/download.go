@@ -35,7 +35,7 @@ func NewDownloadHandler(sm *streaming.Manager, cli *telegram.Client) *DownloadHa
 	}
 }
 
-func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Message, url string) error {
+func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Message, url string, audioOnly bool) error {
 	api := h.client.API()
 	
 	inputPeer, err := resolvePeer(msg.PeerID, e)
@@ -60,7 +60,7 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 		}
 	}
 
-	infos, providerName, err := provider.Resolve(ctx, url)
+	infos, providerName, err := provider.Resolve(ctx, url, provider.Options{AudioOnly: audioOnly})
 	if err != nil {
 		editMsg(fmt.Sprintf("❌ Failed from %s: %v", providerName, err))
 		return err
@@ -221,6 +221,23 @@ func (h *DownloadHandler) createInputMedia(input streaming.StreamInput, fileID i
 			"w", w, "h", h, 
 			"dur", input.Duration,
 		)
+
+		if strings.HasPrefix(mime, "audio/") {
+			return &tg.InputMediaUploadedDocument{
+				File: inputFile,
+				MimeType: mime,
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeAudio{
+						Duration: int(input.Duration),
+						Title:    input.Filename, // Could be better metadata
+						Performer: "AetherBot",
+					},
+					&tg.DocumentAttributeFilename{
+						FileName: input.Filename,
+					},
+				},
+			}
+		}
 
 		return &tg.InputMediaUploadedDocument{
 			File: inputFile,

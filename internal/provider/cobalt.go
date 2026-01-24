@@ -39,8 +39,8 @@ func (cp *CobaltProvider) Supports(url string) bool {
 	return true
 }
 
-func (cp *CobaltProvider) GetVideoInfo(ctx context.Context, url string) ([]VideoInfo, error) {
-	apiResp, err := cp.requestAPI(ctx, url)
+func (cp *CobaltProvider) GetVideoInfo(ctx context.Context, url string, opts Options) ([]VideoInfo, error) {
+	apiResp, err := cp.requestAPI(ctx, url, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -68,11 +68,16 @@ type cobaltError struct {
 	Context string `json:"context"`
 }
 
-func (cp *CobaltProvider) requestAPI(ctx context.Context, mediaURL string) (*cobaltAPIResponse, error) {
+func (cp *CobaltProvider) requestAPI(ctx context.Context, mediaURL string, opts Options) (*cobaltAPIResponse, error) {
 	requestBody := map[string]interface{}{
 		"url":          mediaURL,
 		"downloadMode": "auto",
 		"videoQuality": "max",
+	}
+	
+	if opts.AudioOnly {
+		requestBody["downloadMode"] = "audio"
+		requestBody["isAudioOnly"] = true
 	}
 
 	jsonBody, err := json.Marshal(requestBody)

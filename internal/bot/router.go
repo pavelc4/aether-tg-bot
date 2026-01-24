@@ -41,13 +41,16 @@ func (r *Router) OnMessage(ctx context.Context, e tg.Entities, update *tg.Update
 	if strings.HasPrefix(text, "/stats") {
 		return r.admin.HandleStats(ctx, e, msg)
 	}
+	if strings.HasPrefix(text, "/speedtest") || strings.HasPrefix(text, "/speed") {
+		return r.basic.HandleSpeedtest(ctx, e, msg)
+	}
 
 	if strings.HasPrefix(text, "/dl") || strings.HasPrefix(text, "/video") {
 		parts := strings.Fields(text)
 		if len(parts) > 1 {
 			url := parts[1]
 			if provider.ExtractURL(url) != "" && provider.IsSupported(url) {
-				return r.download.Handle(ctx, e, msg, url)
+				return r.download.Handle(ctx, e, msg, url, false)
 			}
 		}
 	}
@@ -56,8 +59,7 @@ func (r *Router) OnMessage(ctx context.Context, e tg.Entities, update *tg.Update
 		if len(parts) > 1 {
 			url := parts[1]
 			if provider.ExtractURL(url) != "" && provider.IsSupported(url) {
-				// TODO: Pass audioOnly=true once supported by Handle
-				return r.download.Handle(ctx, e, msg, url)
+				return r.download.Handle(ctx, e, msg, url, true)
 			}
 		}
 	}
@@ -65,7 +67,7 @@ func (r *Router) OnMessage(ctx context.Context, e tg.Entities, update *tg.Update
 	url := provider.ExtractURL(text)
 	if url != "" {
 		if provider.IsSupported(url) {
-			return r.download.Handle(ctx, e, msg, url)
+			return r.download.Handle(ctx, e, msg, url, false)
 		}
 	}
 
