@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"math/rand"
 	"regexp"
 	"strings"
 	"time"
@@ -36,8 +37,9 @@ func NewDownloadHandler(sm *streaming.Manager, cli *telegram.Client) *DownloadHa
 }
 
 func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Message, url string, audioOnly bool) error {
+	logger.Info("DownloadHandler Handle called", "url", url, "audioOnly", audioOnly)
 	api := h.client.API()
-	
+
 	inputPeer, err := resolvePeer(msg.PeerID, e)
 	if err != nil {
 		return fmt.Errorf("failed to resolve peer: %w", err)
@@ -50,7 +52,7 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 	if err != nil {
 		return fmt.Errorf("send message failed: %w", err)
 	}
-	
+
 	sentMsgID := getMsgID(sentUpdates)
 
 	editMsg := func(text string) {
@@ -90,22 +92,41 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 			Height:   info.Height,
 		}
 
-		fileID := time.Now().UnixNano() + int64(i)
-		
+		// Detect if this is a photo
+		isPhoto := strings.HasPrefix(input.MIME, "image/") ||
+			strings.HasSuffix(strings.ToLower(input.Filename), ".jpg") ||
+			strings.HasSuffix(strings.ToLower(input.Filename), ".jpeg") ||
+			strings.HasSuffix(strings.ToLower(input.Filename), ".png") ||
+			strings.HasSuffix(strings.ToLower(input.Filename), ".webp")
+
+		// Use random ID for fileID to avoid collisions
+		fileID := rand.Int63()
+		isBig := !isPhoto && input.Size > 10*1024*1024
+
+		logger.Info("Upload strategy",
+			"file", input.Filename,
+			"size", input.Size,
+			"mime", input.MIME,
+			"isPhoto", isPhoto,
+			"isBig", isBig,
+			"fileID", fileID,
+		)
+
 		uploadFn := func(ctx context.Context, chunk streaming.Chunk, _ int64) error {
-			return uploader.UploadChunk(ctx, chunk, fileID)
+			return uploader.UploadChunk(ctx, chunk, fileID, isBig)
 		}
-		
+
 		var actualParts int
-		actualParts, err = h.streamMgr.Stream(ctx, input, uploadFn, func(read, total int64) {})
-		
+		var md5sum string
+		actualParts, md5sum, err = h.streamMgr.Stream(ctx, input, uploadFn, func(read, total int64) {})
+
 		if err != nil {
 			logger.Error("Failed to stream item", "index", i, "error", err)
 			continue
 		}
 
 		if actualParts > 0 {
-			media := h.createInputMedia(input, fileID, actualParts)
+			media := h.createInputMedia(input, fileID, actualParts, isBig, md5sum)
 			if media != nil {
 				album = append(album, media)
 				uploadedInfos = append(uploadedInfos, info)
@@ -119,7 +140,7 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 	}
 
 	logger.Info("Starting batch send", "total_items", len(album))
-	
+
 	for i := 0; i < len(album); i += MaxAlbumSize {
 		end := i + MaxAlbumSize
 		if end > len(album) {
@@ -128,14 +149,18 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 
 		batch := album[i:end]
 		batchInfos := uploadedInfos[i:end]
-		
+
 		logger.Info("Sending batch", "start", i, "end", end, "count", len(batch))
-		
+
 		userName := getUserName(e, msg)
-		captionHTML := h.buildCaption(batchInfos[0], providerName, time.Since(startTime), url, userName)
-		captionText, entities := h.parseCaptionEntities(captionHTML)
+		var captionText string
+		var entities []tg.MessageEntityClass
 
 		if len(batch) == 1 {
+			// Single item: add caption
+			captionHTML := h.buildCaption(batchInfos[0], providerName, time.Since(startTime), url, userName)
+			captionText, entities = h.parseCaptionEntities(captionHTML)
+
 			_, err := api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
 				Peer:     inputPeer,
 				ReplyTo:  &tg.InputReplyToMessage{ReplyToMsgID: msg.ID},
@@ -147,17 +172,27 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 			if err != nil {
 				logger.Error("Failed to send single media", "error", err)
 				editMsg(fmt.Sprintf("❌ Upload Error (Single): %v", err))
+			} else {
+				logger.Info(" Successfully sent single media")
 			}
 		} else {
+			// Multiple items: caption only on last item
 			var multiMedia []tg.InputSingleMedia
 			for j, media := range batch {
 				single := tg.InputSingleMedia{
 					RandomID: time.Now().UnixNano() + int64(j),
 					Media:    media,
 				}
-				if j == 0 {
-					single.Message = captionText
-					single.Entities = entities
+				// Add caption only to the last item in this batch
+				if j == len(batch)-1 {
+					// Check if this is the very last item overall
+					isLastBatch := (end == len(album))
+					if isLastBatch {
+						captionHTML := h.buildCaption(batchInfos[j], providerName, time.Since(startTime), url, userName)
+						captionText, entities = h.parseCaptionEntities(captionHTML)
+						single.Message = captionText
+						single.Entities = entities
+					}
 				}
 				multiMedia = append(multiMedia, single)
 			}
@@ -169,11 +204,47 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 			})
 			
 			if err != nil {
-				logger.Error("Failed to send album batch", "error", err)
-				editMsg(fmt.Sprintf("❌ Upload Error (Batch %d): %v", i/MaxAlbumSize+1, err))
+				logger.Error("Failed to send album batch, trying individual sends", 
+					"error", err,
+					"batch_size", len(batch),
+				)
+				
+				// Fallback: send images one by one, caption only on last
+				for j, media := range batch {
+					var singleCaptionText string
+					var singleEntities []tg.MessageEntityClass
+
+					// Add caption only to the very last image
+					isLastImage := (i+j == len(album)-1)
+					if isLastImage {
+						captionHTML := h.buildCaption(batchInfos[j], providerName, time.Since(startTime), url, userName)
+						singleCaptionText, singleEntities = h.parseCaptionEntities(captionHTML)
+					}
+
+					_, singleErr := api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
+						Peer:     inputPeer,
+						ReplyTo:  &tg.InputReplyToMessage{ReplyToMsgID: msg.ID},
+						Media:    media,
+						Message:  singleCaptionText,
+						Entities: singleEntities,
+						RandomID: time.Now().UnixNano() + int64(j),
+					})
+
+					if singleErr != nil {
+						logger.Error("Failed to send single image", "index", j, "error", singleErr)
+					} else {
+						logger.Info("Successfully sent single image", "index", j, "withCaption", isLastImage)
+					}
+
+					if j < len(batch)-1 {
+						time.Sleep(500 * time.Millisecond)
+					}
+				}
+			} else {
+				logger.Info("Successfully sent album", "items", len(batch))
 			}
 		}
-		
+
 		if end < len(album) {
 			time.Sleep(1 * time.Second)
 		}
@@ -181,66 +252,101 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 
 	if sentMsgID != 0 {
 		api.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
-			ID: []int{sentMsgID},
+			ID:     []int{sentMsgID},
 			Revoke: true,
 		})
 	}
-	
-	if len(infos) > 1 {
-	} 
 
 	stats.TrackDownload()
 	return nil
 }
 
-func (h *DownloadHandler) createInputMedia(input streaming.StreamInput, fileID int64, parts int) tg.InputMediaClass {
-	inputFile := &tg.InputFileBig{
-		ID:    fileID,
-		Parts: parts,
-		Name:  input.Filename,
+func (h *DownloadHandler) createInputMedia(input streaming.StreamInput, fileID int64, parts int, isBig bool, md5sum string) tg.InputMediaClass {
+	var inputFile tg.InputFileClass
+
+	if isBig {
+		inputFile = &tg.InputFileBig{
+			ID:    fileID,
+			Parts: parts,
+			Name:  input.Filename,
+		}
+	} else {
+		inputFile = &tg.InputFile{
+			ID:          fileID,
+			Parts:       parts,
+			Name:        input.Filename,
+			MD5Checksum: md5sum,
+		}
 	}
 
 	mime := input.MIME
 	if mime == "" {
-		mime = "video/mp4" 
+		mime = "video/mp4"
 	}
 
-	if strings.HasPrefix(mime, "image/") {
-		return &tg.InputMediaUploadedPhoto{
-			File: inputFile,
+	logger.Info("Creating media input", 
+		"file", input.Filename, 
+		"mime", mime, 
+		"parts", parts, 
+		"isBig", isBig,
+	)
+
+
+	isPhoto := strings.HasPrefix(mime, "image/") ||
+		strings.HasSuffix(strings.ToLower(input.Filename), ".jpg") ||
+		strings.HasSuffix(strings.ToLower(input.Filename), ".jpeg") ||
+		strings.HasSuffix(strings.ToLower(input.Filename), ".png") ||
+		strings.HasSuffix(strings.ToLower(input.Filename), ".webp") ||
+		strings.HasSuffix(strings.ToLower(input.Filename), ".gif")
+
+	if isPhoto {
+		if isBig {
+			logger.Error("CRITICAL: Photo cannot use InputFileBig!", "file", input.Filename)
+			return nil
 		}
-	} else {
+
+		// ✅ Photos MUST use InputMediaUploadedPhoto for albums to work
+		logger.Info("Creating InputMediaUploadedPhoto", "file", input.Filename)
+		return &tg.InputMediaUploadedPhoto{
+			File: inputFile, // Must be InputFile (not InputFileBig)
+		}
+	}
+
+	// Audio files
+	if strings.HasPrefix(mime, "audio/") {
+		logger.Info("Creating audio document", "file", input.Filename)
+		return &tg.InputMediaUploadedDocument{
+			File:     inputFile,
+			MimeType: mime,
+			Attributes: []tg.DocumentAttributeClass{
+				&tg.DocumentAttributeAudio{
+					Duration:  int(input.Duration),
+					Title:     input.Filename,
+					Performer: "AetherBot",
+				},
+				&tg.DocumentAttributeFilename{
+					FileName: input.Filename,
+				},
+			},
+		}
+	}
+
+	// Video files
+	if strings.HasPrefix(mime, "video/") {
 		w, h := input.Width, input.Height
 		if w == 0 || h == 0 {
 			w, h = 1280, 720
 			logger.Warn("Missing video dimensions, using default", "file", input.Filename)
 		}
 
-		logger.Info("Creating video attributes", 
+		logger.Info("Creating video document",
 			"file", input.Filename,
-			"w", w, "h", h, 
+			"w", w, "h", h,
 			"dur", input.Duration,
 		)
 
-		if strings.HasPrefix(mime, "audio/") {
-			return &tg.InputMediaUploadedDocument{
-				File: inputFile,
-				MimeType: mime,
-				Attributes: []tg.DocumentAttributeClass{
-					&tg.DocumentAttributeAudio{
-						Duration: int(input.Duration),
-						Title:    input.Filename, // Could be better metadata
-						Performer: "AetherBot",
-					},
-					&tg.DocumentAttributeFilename{
-						FileName: input.Filename,
-					},
-				},
-			}
-		}
-
 		return &tg.InputMediaUploadedDocument{
-			File: inputFile,
+			File:     inputFile,
 			MimeType: mime,
 			Attributes: []tg.DocumentAttributeClass{
 				&tg.DocumentAttributeVideo{
@@ -255,32 +361,41 @@ func (h *DownloadHandler) createInputMedia(input streaming.StreamInput, fileID i
 			},
 		}
 	}
-}
 
+	// Default: generic document
+	logger.Info("Creating generic document", "file", input.Filename)
+	return &tg.InputMediaUploadedDocument{
+		File:     inputFile,
+		MimeType: mime,
+		Attributes: []tg.DocumentAttributeClass{
+			&tg.DocumentAttributeFilename{
+				FileName: input.Filename,
+			},
+		},
+	}
+}
 
 func (h *DownloadHandler) buildCaption(info provider.VideoInfo, providerName string, duration time.Duration, sourceURL string, userName string) string {
 	sizeMB := float64(info.FileSize) / 1024 / 1024
-	
-	const MaxCaptionLen = 1024
-	
+
 	cleanTitle := html.UnescapeString(info.Title)
-	
+
 	displayTitle := cleanTitle
 	if len(displayTitle) > 100 {
 		displayTitle = displayTitle[:97] + "..."
 	}
-	
+
 	safeTitle := html.EscapeString(displayTitle)
 	safeProvider := html.EscapeString(providerName)
 	safeUser := html.EscapeString(userName)
-	
+
 	srcLink := fmt.Sprintf(`<a href="%s">%s</a>`, sourceURL, safeProvider)
-	
+
 	baseText := fmt.Sprintf("<b>%s</b>\n"+
 		"🔗 Source : %s\n"+
 		"💾 Size : <code>%.2f MB</code>\n"+
 		"⏱️ Processing Time : <code>%s</code>\n"+
-		"👤 By : %s", 
+		"👤 By : %s",
 		safeTitle,
 		srcLink,
 		sizeMB,
@@ -293,30 +408,30 @@ func (h *DownloadHandler) buildCaption(info provider.VideoInfo, providerName str
 
 func (h *DownloadHandler) parseCaptionEntities(text string) (string, []tg.MessageEntityClass) {
 	re := regexp.MustCompile(`(?s)<(b|code|a)(?: href="([^"]+)")?>([^<]+)</(?:b|code|a)>`)
-	
+
 	var cleanText strings.Builder
 	var entities []tg.MessageEntityClass
-	
+
 	matches := re.FindAllStringSubmatchIndex(text, -1)
-	
+
 	lastIdx := 0
 	for _, m := range matches {
 		pre := text[lastIdx:m[0]]
 		cleanText.WriteString(pre)
-		
+
 		offset := len(utf16.Encode([]rune(cleanText.String())))
 		tagEnd := m[1]
-		
+
 		tagName := text[m[2]:m[3]]
 		href := ""
 		if m[4] != -1 {
 			href = text[m[4]:m[5]]
 		}
 		content := text[m[6]:m[7]]
-		
+
 		cleanText.WriteString(content)
 		length := len(utf16.Encode([]rune(content)))
-		
+
 		var ent tg.MessageEntityClass
 		switch tagName {
 		case "b":
@@ -326,16 +441,12 @@ func (h *DownloadHandler) parseCaptionEntities(text string) (string, []tg.Messag
 		case "a":
 			ent = &tg.MessageEntityTextURL{Offset: offset, Length: length, URL: href}
 		}
-		
 		if ent != nil {
 			entities = append(entities, ent)
 		}
-		
 		lastIdx = tagEnd
 	}
-	
 	cleanText.WriteString(text[lastIdx:])
-	
 	return cleanText.String(), entities
 }
 
