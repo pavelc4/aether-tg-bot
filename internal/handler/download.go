@@ -52,45 +52,59 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 		}
 	}
 
-	info, providerName, err := provider.Resolve(ctx, url)
+	infos, providerName, err := provider.Resolve(ctx, url)
 	if err != nil {
 		editMsg(fmt.Sprintf("❌ Failed from %s: %v", providerName, err))
 		return err
 	}
 
-	editMsg(fmt.Sprintf("🚀 starting download from %s\nFile: %s", providerName, info.FileName))
-
-	input := streaming.StreamInput{
-		URL:      info.URL,
-		Filename: info.FileName,
-		Size:     info.FileSize,
-		Headers:  info.Headers,
-		MIME:     info.MimeType,
-	}
+	editMsg(fmt.Sprintf("🚀 starting download from %s (found %d items)", providerName, len(infos)))
 
 	uploader := telegram.NewUploader(api)
 
-	fileID := time.Now().UnixNano()
-	
-	uploadFn := func(ctx context.Context, chunk streaming.Chunk, _ int64) error {
-		return uploader.UploadChunk(ctx, chunk, fileID)
-	}
-	
-	progressFn := func(uploaded, total int64) {
+	for i, info := range infos {
+		if len(infos) > 1 {
+			editMsg(fmt.Sprintf("📂 processing item %d/%d: %s", i+1, len(infos), info.FileName))
+		}
+
+		input := streaming.StreamInput{
+			URL:      info.URL,
+			Filename: info.FileName,
+			Size:     info.FileSize,
+			Headers:  info.Headers,
+			MIME:     info.MimeType,
+		}
+
+		fileID := time.Now().UnixNano() + int64(i)
+		
+		uploadFn := func(ctx context.Context, chunk streaming.Chunk, _ int64) error {
+			return uploader.UploadChunk(ctx, chunk, fileID)
+		}
+		
+		var actualParts int
+		actualParts, err = h.streamMgr.Stream(ctx, input, uploadFn, func(read, total int64) {})
+		
+		if err != nil {
+			logger.Error("Failed to stream item", "index", i, "error", err)
+			if len(infos) == 1 {
+				editMsg(fmt.Sprintf("❌ Download failed: %v", err))
+				return err
+			}
+			continue
+		}
+
+		if actualParts > 0 {
+			if err := h.sendMedia(ctx, sender, inputPeer, input, fileID, msg.ID, actualParts); err != nil {
+				logger.Error("Failed to send media", "index", i, "error", err)
+			}
+		}
 	}
 
-	var actualParts int
-	actualParts, err = h.streamMgr.Stream(ctx, input, uploadFn, progressFn)
-	
-	if err != nil {
-		editMsg(fmt.Sprintf("❌ Download failed: %v", err))
-		return err
+	if len(infos) > 1 {
+		editMsg(fmt.Sprintf("✅ Completed album from %s (%d items)", providerName, len(infos)))
 	}
-	if actualParts == 0 {
-		editMsg("❌ Download failed: stream returned no data")
-		return fmt.Errorf("stream returned no data")
-	}
-	return h.sendMedia(ctx, sender, inputPeer, input, fileID, sentMsgID, actualParts)
+
+	return nil
 }
 
 func (h *DownloadHandler) sendMedia(ctx context.Context, sender *message.Sender, peer tg.InputPeerClass, input streaming.StreamInput, fileID int64, replyMsgID int, actualParts int) error {
