@@ -1,86 +1,77 @@
-# Aether Telegram Bot
+# Aether - MTProto Streaming Bot
 
-A simple yet powerful Telegram bot to download media from various social media platforms. Just send a link and the bot will handle the rest.
+A high-performance Telegram bot that streams media from Cobalt, TikTok, and YouTube directly to Telegram without intermediate disk storage.
 
-## ✨ Features
+## 🚀 Features
 
--   Download videos and audio from a wide range of platforms.
--   Easy to use: just send a link to the bot.
--   Support for sending media as single files or grouped as an album.
--   Easy to deploy with Docker and Docker Compose.
--   Lightweight and fast, built with Go.
+- **Streaming Architecture**: Uses `io.ReadCloser` piping to download and upload simultaneously.
+- **MTProto Uploader**: Uses Telegram's native MTProto for max speed and large file support (up to 2GB+).
+- **Concurrency**: Parallel chunk uploading with worker pools.
+- **Low Memory Footprint**: Uses pooled buffers and efficient memory management.
+- **Multiple Providers**: Supports Cobalt, TikTok, and YouTube (via yt-dlp).
 
-## ✨ Supported Platforms
+## 🛠 Project Structure
 
--   Bilibili
--   Bluesky
--   Dailymotion
--   Facebook
--   Instagram
--   Loom
--   OK.ru
--   Pinterest
--   Newgrounds
--   Reddit
--   Rutube
--   Snapchat
--   Soundcloud
--   Streamable
--   TikTok
--   Tumblr
--   Twitch
--   Twitter
--   Vimeo
--   VK
--   Xiaohongshu
--   YouTube
+```
+aether-bot/
+├── cmd/bot/          # Entry point
+├── config/           # Configuration
+├── internal/
+│   ├── app/          # App wiring & shutdown
+│   ├── bot/          # Bot core & router
+│   ├── handler/      # Command & Download handlers
+│   ├── provider/     # Download providers (Cobalt, YT, etc.)
+│   ├── streaming/    # Core streaming engine
+│   └── telegram/     # MTProto wrappers
+├── pkg/              # Shared utilities (buffer, http, worker)
+└── data/             # Session storage
+```
 
-## 🤖 Commands
+## ⚙️ Configuration
 
--   `/start` or `/help`: Shows the welcome message and list of commands.
--   `/stats`: Shows the bot's status.
--   `/support`: Shows support information.
+Copy `.env.example` to `.env` and fill in the values:
 
+```bash
+# Telegram App Credentials (my.telegram.org)
+TELEGRAM_APP_ID=123456
+TELEGRAM_APP_HASH=your_api_hash
+BOT_TOKEN=123:ABC
 
-## 🚀 Getting Started
+# Owner
+OWNER_ID=123456789
 
-### Prerequisites
+# APIs
+COBALT_API=http://cobalt:9000
+YTDLP_API=http://yt-dlp:8080
 
--   Docker and Docker Compose
--   A Telegram Bot Token. Get one from [@BotFather](https://t.me/BotFather).
--   A Telegram API ID and Hash. Get them from [my.telegram.org](https://my.telegram.org).
--   A Telegram OWNER ID . Get one from [@userinfobot](https://t.me/userinfobot).
+# Streaming Tweak
+MAX_CONCURRENT_STREAMS=8
+CHUNK_SIZE=1048576 # 1MB
+```
 
-### 🐳 Docker Deployment (Recommended)
+## 🏃 Running
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/pavelc4/aether-tg-bot.git
-    cd aether-tg-bot
-    ```
+### Local
+```bash
+go run ./cmd/bot
+```
 
-2.  **Create a `.env` file:**
-    Copy the `.env.example` to `.env` and fill in your credentials.
-    ```bash
-    cp .env.example .env
-    ```
-    Your `.env` file should look like this:
-    ```
-    BOT_TOKEN=YOUR_BOT_TOKEN
-    TELEGRAM_API_ID=YOUR_TELEGRAM_API_ID
-    TELEGRAM_API_HASH=YOUR_TELEGRAM_API_HASH
-    OWNER_ID=YOUR_ID_TELEGRAM
-    ```
+### Docker
+```bash
+docker-compose up -d --build
+```
 
-3.  **Run with Docker Compose:**
-    ```bash
-    docker compose up --build -d
-    ```
+## 🔧 Architecture
 
-## 🙏 Credits
+The bot uses a **Download → Pipeline → Upload** architecture:
 
-This bot uses the powerful [Cobalt API](https://github.com/imputnet/cobalt) for downloading media. Many thanks to the Cobalt team for their great work!
+1. **Provider** resolves URL to a direct stream (`http.Response.Body`).
+2. **Stream Manager** initiates a `Pipeline`.
+3. **Pipeline** reads from stream into 1MB chunks (using buffer pool).
+4. **Upload Workers** (concurrent) pick chunks and upload via MTProto `saveBigFilePart`.
+5. **State Manager** tracks progress and retries.
+6. Once complete, `sendMedia` commits the file to Telegram.
 
-## 📄 License
+## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT
