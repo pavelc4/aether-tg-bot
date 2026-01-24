@@ -12,12 +12,14 @@ import (
 type Router struct {
 	download *handler.DownloadHandler
 	admin    *handler.AdminHandler
+	basic    *handler.BasicHandler
 }
 
-func NewRouter(dl *handler.DownloadHandler, adm *handler.AdminHandler) *Router {
+func NewRouter(dl *handler.DownloadHandler, adm *handler.AdminHandler, basic *handler.BasicHandler) *Router {
 	return &Router{
 		download: dl,
 		admin:    adm,
+		basic:    basic,
 	}
 }
 
@@ -30,17 +32,42 @@ func (r *Router) OnMessage(ctx context.Context, e tg.Entities, update *tg.Update
 	
 	text := msg.Message
 
+	if strings.HasPrefix(text, "/start") {
+		return r.basic.HandleStart(ctx, e, msg)
+	}
+	if strings.HasPrefix(text, "/help") {
+		return r.basic.HandleHelp(ctx, e, msg)
+	}
 	if strings.HasPrefix(text, "/stats") {
 		return r.admin.HandleStats(ctx, e, msg)
 	}
-	if strings.HasPrefix(text, "/start") {
-		return nil
+	if strings.HasPrefix(text, "/speedtest") || strings.HasPrefix(text, "/speed") {
+		return r.basic.HandleSpeedtest(ctx, e, msg)
+	}
+
+	if strings.HasPrefix(text, "/dl") || strings.HasPrefix(text, "/video") {
+		parts := strings.Fields(text)
+		if len(parts) > 1 {
+			url := parts[1]
+			if provider.ExtractURL(url) != "" && provider.IsSupported(url) {
+				return r.download.Handle(ctx, e, msg, url, false)
+			}
+		}
+	}
+	if strings.HasPrefix(text, "/mp") {
+		parts := strings.Fields(text)
+		if len(parts) > 1 {
+			url := parts[1]
+			if provider.ExtractURL(url) != "" && provider.IsSupported(url) {
+				return r.download.Handle(ctx, e, msg, url, true)
+			}
+		}
 	}
 
 	url := provider.ExtractURL(text)
 	if url != "" {
 		if provider.IsSupported(url) {
-			return r.download.Handle(ctx, e, msg, url)
+			return r.download.Handle(ctx, e, msg, url, false)
 		}
 	}
 

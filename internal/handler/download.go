@@ -3,16 +3,24 @@ package handler
 import (
 	"context"
 	"fmt"
+	"html"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/gotd/td/telegram/message"
 	"github.com/gotd/td/tg"
 
 	"github.com/pavelc4/aether-tg-bot/internal/provider"
+	"github.com/pavelc4/aether-tg-bot/internal/stats"
 	"github.com/pavelc4/aether-tg-bot/internal/streaming"
 	"github.com/pavelc4/aether-tg-bot/internal/telegram"
 	"github.com/pavelc4/aether-tg-bot/pkg/logger"
+)
+
+const (
+	MaxAlbumSize = 10
 )
 
 type DownloadHandler struct {
@@ -27,7 +35,7 @@ func NewDownloadHandler(sm *streaming.Manager, cli *telegram.Client) *DownloadHa
 	}
 }
 
-func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Message, url string) error {
+func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Message, url string, audioOnly bool) error {
 	api := h.client.API()
 	
 	inputPeer, err := resolvePeer(msg.PeerID, e)
@@ -52,7 +60,7 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 		}
 	}
 
-	infos, providerName, err := provider.Resolve(ctx, url)
+	infos, providerName, err := provider.Resolve(ctx, url, provider.Options{AudioOnly: audioOnly})
 	if err != nil {
 		editMsg(fmt.Sprintf("❌ Failed from %s: %v", providerName, err))
 		return err
@@ -61,6 +69,10 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 	editMsg(fmt.Sprintf("🚀 starting download from %s (found %d items)", providerName, len(infos)))
 
 	uploader := telegram.NewUploader(api)
+	startTime := time.Now()
+
+	var album []tg.InputMediaClass
+	var uploadedInfos []provider.VideoInfo
 
 	for i, info := range infos {
 		if len(infos) > 1 {
@@ -73,6 +85,9 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 			Size:     info.FileSize,
 			Headers:  info.Headers,
 			MIME:     info.MimeType,
+			Duration: info.Duration,
+			Width:    info.Width,
+			Height:   info.Height,
 		}
 
 		fileID := time.Now().UnixNano() + int64(i)
@@ -86,55 +101,242 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 		
 		if err != nil {
 			logger.Error("Failed to stream item", "index", i, "error", err)
-			if len(infos) == 1 {
-				editMsg(fmt.Sprintf("❌ Download failed: %v", err))
-				return err
-			}
 			continue
 		}
 
 		if actualParts > 0 {
-			if err := h.sendMedia(ctx, sender, inputPeer, input, fileID, msg.ID, actualParts); err != nil {
-				logger.Error("Failed to send media", "index", i, "error", err)
+			media := h.createInputMedia(input, fileID, actualParts)
+			if media != nil {
+				album = append(album, media)
+				uploadedInfos = append(uploadedInfos, info)
 			}
 		}
 	}
 
-	if len(infos) > 1 {
-		editMsg(fmt.Sprintf("✅ Completed album from %s (%d items)", providerName, len(infos)))
+	if len(album) == 0 {
+		editMsg("❌ No items were successfully downloaded.")
+		return nil
 	}
 
+	logger.Info("Starting batch send", "total_items", len(album))
+	
+	for i := 0; i < len(album); i += MaxAlbumSize {
+		end := i + MaxAlbumSize
+		if end > len(album) {
+			end = len(album)
+		}
+
+		batch := album[i:end]
+		batchInfos := uploadedInfos[i:end]
+		
+		logger.Info("Sending batch", "start", i, "end", end, "count", len(batch))
+		
+		userName := getUserName(e, msg)
+		captionHTML := h.buildCaption(batchInfos[0], providerName, time.Since(startTime), url, userName)
+		captionText, entities := h.parseCaptionEntities(captionHTML)
+
+		if len(batch) == 1 {
+			_, err := api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
+				Peer:     inputPeer,
+				ReplyTo:  &tg.InputReplyToMessage{ReplyToMsgID: msg.ID},
+				Media:    batch[0],
+				Message:  captionText,
+				Entities: entities,
+				RandomID: time.Now().UnixNano(),
+			})
+			if err != nil {
+				logger.Error("Failed to send single media", "error", err)
+				editMsg(fmt.Sprintf("❌ Upload Error (Single): %v", err))
+			}
+		} else {
+			var multiMedia []tg.InputSingleMedia
+			for j, media := range batch {
+				single := tg.InputSingleMedia{
+					RandomID: time.Now().UnixNano() + int64(j),
+					Media:    media,
+				}
+				if j == 0 {
+					single.Message = captionText
+					single.Entities = entities
+				}
+				multiMedia = append(multiMedia, single)
+			}
+
+			_, err := api.MessagesSendMultiMedia(ctx, &tg.MessagesSendMultiMediaRequest{
+				Peer:       inputPeer,
+				ReplyTo:    &tg.InputReplyToMessage{ReplyToMsgID: msg.ID},
+				MultiMedia: multiMedia,
+			})
+			
+			if err != nil {
+				logger.Error("Failed to send album batch", "error", err)
+				editMsg(fmt.Sprintf("❌ Upload Error (Batch %d): %v", i/MaxAlbumSize+1, err))
+			}
+		}
+		
+		if end < len(album) {
+			time.Sleep(1 * time.Second)
+		}
+	}
+
+	if sentMsgID != 0 {
+		api.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
+			ID: []int{sentMsgID},
+			Revoke: true,
+		})
+	}
+	
+	if len(infos) > 1 {
+	} 
+
+	stats.TrackDownload()
 	return nil
 }
 
-func (h *DownloadHandler) sendMedia(ctx context.Context, sender *message.Sender, peer tg.InputPeerClass, input streaming.StreamInput, fileID int64, replyMsgID int, actualParts int) error {
-
+func (h *DownloadHandler) createInputMedia(input streaming.StreamInput, fileID int64, parts int) tg.InputMediaClass {
 	inputFile := &tg.InputFileBig{
 		ID:    fileID,
-		Parts: actualParts,
+		Parts: parts,
 		Name:  input.Filename,
 	}
 
 	mime := input.MIME
 	if mime == "" {
-		mime = "video/mp4" // Default
+		mime = "video/mp4" 
 	}
 
-	isImage := strings.HasPrefix(mime, "image/")
+	if strings.HasPrefix(mime, "image/") {
+		return &tg.InputMediaUploadedPhoto{
+			File: inputFile,
+		}
+	} else {
+		w, h := input.Width, input.Height
+		if w == 0 || h == 0 {
+			w, h = 1280, 720
+			logger.Warn("Missing video dimensions, using default", "file", input.Filename)
+		}
+
+		logger.Info("Creating video attributes", 
+			"file", input.Filename,
+			"w", w, "h", h, 
+			"dur", input.Duration,
+		)
+
+		if strings.HasPrefix(mime, "audio/") {
+			return &tg.InputMediaUploadedDocument{
+				File: inputFile,
+				MimeType: mime,
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeAudio{
+						Duration: int(input.Duration),
+						Title:    input.Filename, // Could be better metadata
+						Performer: "AetherBot",
+					},
+					&tg.DocumentAttributeFilename{
+						FileName: input.Filename,
+					},
+				},
+			}
+		}
+
+		return &tg.InputMediaUploadedDocument{
+			File: inputFile,
+			MimeType: mime,
+			Attributes: []tg.DocumentAttributeClass{
+				&tg.DocumentAttributeVideo{
+					SupportsStreaming: true,
+					Duration:          float64(input.Duration),
+					W:                 w,
+					H:                 h,
+				},
+				&tg.DocumentAttributeFilename{
+					FileName: input.Filename,
+				},
+			},
+		}
+	}
+}
+
+
+func (h *DownloadHandler) buildCaption(info provider.VideoInfo, providerName string, duration time.Duration, sourceURL string, userName string) string {
+	sizeMB := float64(info.FileSize) / 1024 / 1024
 	
-	upload := message.UploadedDocument(inputFile).
-		MIME(mime).
-		Filename(input.Filename)
-
-	if !isImage {
-		upload = upload.Attributes(&tg.DocumentAttributeVideo{
-			SupportsStreaming: true,
-		})
+	const MaxCaptionLen = 1024
+	
+	cleanTitle := html.UnescapeString(info.Title)
+	
+	displayTitle := cleanTitle
+	if len(displayTitle) > 100 {
+		displayTitle = displayTitle[:97] + "..."
 	}
+	
+	safeTitle := html.EscapeString(displayTitle)
+	safeProvider := html.EscapeString(providerName)
+	safeUser := html.EscapeString(userName)
+	
+	srcLink := fmt.Sprintf(`<a href="%s">%s</a>`, sourceURL, safeProvider)
+	
+	baseText := fmt.Sprintf("<b>%s</b>\n"+
+		"🔗 Source : %s\n"+
+		"💾 Size : <code>%.2f MB</code>\n"+
+		"⏱️ Processing Time : <code>%s</code>\n"+
+		"👤 By : %s", 
+		safeTitle,
+		srcLink,
+		sizeMB,
+		duration.Round(time.Second),
+		safeUser,
+	)
 
-	_, err := sender.To(peer).Reply(replyMsgID).Media(ctx, upload)
+	return baseText
+}
 
-	return err
+func (h *DownloadHandler) parseCaptionEntities(text string) (string, []tg.MessageEntityClass) {
+	re := regexp.MustCompile(`(?s)<(b|code|a)(?: href="([^"]+)")?>([^<]+)</(?:b|code|a)>`)
+	
+	var cleanText strings.Builder
+	var entities []tg.MessageEntityClass
+	
+	matches := re.FindAllStringSubmatchIndex(text, -1)
+	
+	lastIdx := 0
+	for _, m := range matches {
+		pre := text[lastIdx:m[0]]
+		cleanText.WriteString(pre)
+		
+		offset := len(utf16.Encode([]rune(cleanText.String())))
+		tagEnd := m[1]
+		
+		tagName := text[m[2]:m[3]]
+		href := ""
+		if m[4] != -1 {
+			href = text[m[4]:m[5]]
+		}
+		content := text[m[6]:m[7]]
+		
+		cleanText.WriteString(content)
+		length := len(utf16.Encode([]rune(content)))
+		
+		var ent tg.MessageEntityClass
+		switch tagName {
+		case "b":
+			ent = &tg.MessageEntityBold{Offset: offset, Length: length}
+		case "code":
+			ent = &tg.MessageEntityCode{Offset: offset, Length: length}
+		case "a":
+			ent = &tg.MessageEntityTextURL{Offset: offset, Length: length, URL: href}
+		}
+		
+		if ent != nil {
+			entities = append(entities, ent)
+		}
+		
+		lastIdx = tagEnd
+	}
+	
+	cleanText.WriteString(text[lastIdx:])
+	
+	return cleanText.String(), entities
 }
 
 func getMsgID(updates tg.UpdatesClass) int {
@@ -156,4 +358,30 @@ func getMsgID(updates tg.UpdatesClass) int {
 		}
 	}
 	return 0
+}
+
+func getUserName(e tg.Entities, msg *tg.Message) string {
+	var userID int64
+	if from, ok := msg.GetFromID(); ok {
+		if u, ok := from.(*tg.PeerUser); ok {
+			userID = u.UserID
+		}
+	} else {
+		if u, ok := msg.GetPeerID().(*tg.PeerUser); ok {
+			userID = u.UserID
+		}
+	}
+
+	if userID != 0 {
+		if user, ok := e.Users[userID]; ok {
+			if user.Username != "" {
+				return "@" + user.Username
+			}
+			name := strings.TrimSpace(user.FirstName + " " + user.LastName)
+			if name != "" {
+				return name
+			}
+		}
+	}
+	return "User"
 }

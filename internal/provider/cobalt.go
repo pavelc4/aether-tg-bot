@@ -39,8 +39,8 @@ func (cp *CobaltProvider) Supports(url string) bool {
 	return true
 }
 
-func (cp *CobaltProvider) GetVideoInfo(ctx context.Context, url string) ([]VideoInfo, error) {
-	apiResp, err := cp.requestAPI(ctx, url)
+func (cp *CobaltProvider) GetVideoInfo(ctx context.Context, url string, opts Options) ([]VideoInfo, error) {
+	apiResp, err := cp.requestAPI(ctx, url, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -68,11 +68,16 @@ type cobaltError struct {
 	Context string `json:"context"`
 }
 
-func (cp *CobaltProvider) requestAPI(ctx context.Context, mediaURL string) (*cobaltAPIResponse, error) {
+func (cp *CobaltProvider) requestAPI(ctx context.Context, mediaURL string, opts Options) (*cobaltAPIResponse, error) {
 	requestBody := map[string]interface{}{
 		"url":          mediaURL,
 		"downloadMode": "auto",
 		"videoQuality": "max",
+	}
+	
+	if opts.AudioOnly {
+		requestBody["downloadMode"] = "audio"
+		requestBody["isAudioOnly"] = true
 	}
 
 	jsonBody, err := json.Marshal(requestBody)
@@ -124,43 +129,45 @@ func (cp *CobaltProvider) parseResponse(resp *cobaltAPIResponse) ([]VideoInfo, e
 		return []VideoInfo{{
 			URL:      resp.URL,
 			FileName: resp.Filename,
+			Title:    resp.Filename,
 			MimeType: guessMimeType(resp.Filename),
 		}}, nil
 
 	case "picker":
-if len(resp.Picker) == 0 {
-return nil, fmt.Errorf("empty picker in cobalt response")
-}
+		if len(resp.Picker) == 0 {
+			return nil, fmt.Errorf("empty picker in cobalt response")
+		}
+		
+		var results []VideoInfo
+		for _, item := range resp.Picker {
+			if item.URL == "" {
+				continue
+			}
+			filename := item.Filename
+			if filename == "" {
+				filename = resp.Filename
+			}
+			if filename == "" {
+				ext := ".jpg"
+				if item.Type == "video" {
+					ext = ".mp4"
+				}
+				filename = fmt.Sprintf("cobalt_%d_%d%s", time.Now().Unix(), len(results), ext)
+			}
+			
+			results = append(results, VideoInfo{
+				URL:      item.URL,
+				FileName: filename,
+				Title:    filename,
+				MimeType: guessMimeType(filename),
+			})
+		}
+		
+		if len(results) == 0 {
+			return nil, fmt.Errorf("no valid items found in picker")
+		}
 
-var results []VideoInfo
-for _, item := range resp.Picker {
-if item.URL == "" {
-continue
-}
-filename := item.Filename
-if filename == "" {
-filename = resp.Filename
-}
-if filename == "" {
-ext := ".jpg"
-if item.Type == "video" {
-ext = ".mp4"
-}
-filename = fmt.Sprintf("cobalt_%d_%d%s", time.Now().Unix(), len(results), ext)
-}
-
-results = append(results, VideoInfo{
-URL:	  item.URL,
-FileName: filename,
-MimeType: guessMimeType(filename),
-})
-}
-
-if len(results) == 0 {
-return nil, fmt.Errorf("no valid items found in picker")
-}
-
-return results, nil
+		return results, nil
 
 	case "error":
 		return nil, fmt.Errorf("cobalt API error: %s (%s)", resp.Error.Code, resp.Error.Context)
