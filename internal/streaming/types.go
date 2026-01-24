@@ -36,6 +36,9 @@ type StreamInput struct {
 	Size     int64
 	Headers  map[string]string
 	MIME     string
+	Duration int
+	Width    int
+	Height   int
 }
 
 // Pipeline components

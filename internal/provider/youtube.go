@@ -103,14 +103,22 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string) ([]Vide
 		}
 	}
 
-	logger.Info("YouTube info resolved", "title", meta.Title, "size", size)
+	logger.Info("YouTube info resolved", 
+		"title", meta.Title, 
+		"size", size,
+		"res", fmt.Sprintf("%dx%d", meta.Width, meta.Height),
+		"dur", meta.Duration,
+	)
 
 	return []VideoInfo{{
 		URL:      finalURL,
 		FileName: filename,
+		Title:    meta.Title,
 		FileSize: size,
 		MimeType: "video/" + meta.Ext,
 		Duration: int(meta.Duration),
+		Width:    meta.Width,
+		Height:   meta.Height,
 		Headers:  meta.HttpHeaders,
 	}}, nil
 }
@@ -131,6 +139,8 @@ type ytdlpMeta struct {
 	Title       string            `json:"title"`
 	URL         string            `json:"url"`
 	Ext         string            `json:"ext"`
+	Width       int               `json:"width"`
+	Height      int               `json:"height"`
 	Duration    float64           `json:"duration"`
 	FileSize    int64             `json:"filesize,omitempty"`
 	FileSizeApp int64             `json:"filesize_approx,omitempty"`

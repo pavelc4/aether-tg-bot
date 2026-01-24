@@ -52,6 +52,7 @@ func (tp *TikTokProvider) GetVideoInfo(ctx context.Context, url string) ([]Video
 	return []VideoInfo{{
 		URL:      videoURL,
 		FileName: fmt.Sprintf("tiktok_%s.mp4", resp.Data.ID),
+		Title:    resp.Data.Title,
 		FileSize: int64(resp.Data.Size), // TikWM provides size
 		MimeType: "video/mp4",
 		Duration: resp.Data.Duration,
