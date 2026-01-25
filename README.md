@@ -92,7 +92,7 @@ CHUNK_SIZE=1048576            # Upload chunk size (1MB default)
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/aether-bot.git
+git clone https://github.com/pavelc4/aether-tg-bot.git
 cd aether-bot
 
 # Configure environment
