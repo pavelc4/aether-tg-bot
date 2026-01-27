@@ -48,7 +48,10 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Op
 
 	if cookies := config.GetYtdlpCookies(); cookies != "" {
 		if _, err := os.Stat(cookies); err == nil {
+			logger.Info("Using yt-dlp cookies", "path", cookies)
 			args = append(args, "--cookies", cookies)
+		} else {
+			logger.Warn("Cookies file not found", "path", cookies)
 		}
 	}
 
