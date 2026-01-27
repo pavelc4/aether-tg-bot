@@ -178,32 +178,36 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 				logger.Info(" Successfully sent single media")
 			}
 		} else {
-			// Multiple items: caption only on last item
-			var multiMedia []tg.InputSingleMedia
-			for j, media := range batch {
-				single := tg.InputSingleMedia{
-					RandomID: time.Now().UnixNano() + int64(j),
-					Media:    media,
-				}
-				// Add caption only to the last item in this batch
-				if j == len(batch)-1 {
-					// Check if this is the very last item overall
-					isLastBatch := (end == len(album))
-					if isLastBatch {
-						captionHTML := h.buildCaption(batchInfos[j], providerName, time.Since(startTime), url, userName)
-						captionText, entities = h.parseCaptionEntities(captionHTML)
-						single.Message = captionText
-						single.Entities = entities
+			multiMedia, err := h.prepareAlbum(ctx, api, inputPeer, batch)
+			if err != nil {
+				logger.Error("Failed to prepare album", "error", err)
+			}
+			
+			if len(multiMedia) == len(batch) {
+				for j := range multiMedia {
+					if j == len(multiMedia)-1 {
+						isLastBatch := (end == len(album))
+						if isLastBatch {
+							captionHTML := h.buildCaption(batchInfos[j], providerName, time.Since(startTime), url, userName)
+							captionText, entities = h.parseCaptionEntities(captionHTML)
+							multiMedia[j].Message = captionText
+							multiMedia[j].Entities = entities
+						}
 					}
 				}
-				multiMedia = append(multiMedia, single)
-			}
 
-			_, err := api.MessagesSendMultiMedia(ctx, &tg.MessagesSendMultiMediaRequest{
-				Peer:       inputPeer,
-				ReplyTo:    &tg.InputReplyToMessage{ReplyToMsgID: msg.ID},
-				MultiMedia: multiMedia,
-			})
+				// 3. Send MultiMedia
+				_, err = api.MessagesSendMultiMedia(ctx, &tg.MessagesSendMultiMediaRequest{
+					Peer:       inputPeer,
+					ReplyTo:    &tg.InputReplyToMessage{ReplyToMsgID: msg.ID},
+					MultiMedia: multiMedia,
+				})
+			} else {
+				// If prepareAlbum failed, ensure err is set to trigger fallback
+				if err == nil {
+					err = fmt.Errorf("failed to prepare all media items")
+				}
+			}
 			
 			if err != nil {
 				logger.Error("Failed to send album batch, trying individual sends", 
@@ -253,10 +257,28 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 	}
 
 	if sentMsgID != 0 {
-		api.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
-			ID:     []int{sentMsgID},
-			Revoke: true,
-		})
+		if channelPeer, ok := inputPeer.(*tg.InputPeerChannel); ok {
+			logger.Info("Deleting message in channel", "msg_id", sentMsgID)
+			_, err := api.ChannelsDeleteMessages(ctx, &tg.ChannelsDeleteMessagesRequest{
+				Channel: &tg.InputChannel{
+					ChannelID:  channelPeer.ChannelID,
+					AccessHash: channelPeer.AccessHash,
+				},
+				ID: []int{sentMsgID},
+			})
+			if err != nil {
+				logger.Error("Failed to delete channel message", "error", err)
+			}
+		} else {
+			logger.Info("Deleting message in chat", "msg_id", sentMsgID)
+			_, err := api.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
+				ID:     []int{sentMsgID},
+				Revoke: true,
+			})
+			if err != nil {
+				logger.Error("Failed to delete message", "error", err)
+			}
+		}
 	}
 
 	stats.TrackDownload()
@@ -307,7 +329,6 @@ func (h *DownloadHandler) createInputMedia(input streaming.StreamInput, fileID i
 			return nil
 		}
 
-		// ✅ Photos MUST use InputMediaUploadedPhoto for albums to work
 		logger.Info("Creating InputMediaUploadedPhoto", "file", input.Filename)
 		return &tg.InputMediaUploadedPhoto{
 			File: inputFile, // Must be InputFile (not InputFileBig)
@@ -497,4 +518,54 @@ func getUserName(e tg.Entities, msg *tg.Message) string {
 		}
 	}
 	return "User"
+}
+func (h *DownloadHandler) prepareAlbum(ctx context.Context, api *tg.Client, peer tg.InputPeerClass, batch []tg.InputMediaClass) ([]tg.InputSingleMedia, error) {
+	var multiMedia []tg.InputSingleMedia
+
+	for i, media := range batch {
+		// Pre-upload media to get persistent ID
+		res, err := api.MessagesUploadMedia(ctx, &tg.MessagesUploadMediaRequest{
+			Peer:  peer,
+			Media: media,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to upload media %d: %w", i, err)
+		}
+
+		var inputMedia tg.InputMediaClass
+
+		switch m := res.(type) {
+		case *tg.MessageMediaPhoto:
+			if photo, ok := m.Photo.(*tg.Photo); ok {
+				inputMedia = &tg.InputMediaPhoto{
+					ID: &tg.InputPhoto{
+						ID:            photo.ID,
+						AccessHash:    photo.AccessHash,
+						FileReference: photo.FileReference,
+					},
+				}
+			}
+		case *tg.MessageMediaDocument:
+			if doc, ok := m.Document.(*tg.Document); ok {
+				inputMedia = &tg.InputMediaDocument{
+					ID: &tg.InputDocument{
+						ID:            doc.ID,
+						AccessHash:    doc.AccessHash,
+						FileReference: doc.FileReference,
+					},
+				}
+			}
+		}
+
+		if inputMedia == nil {
+			return nil, fmt.Errorf("failed to get persistent media for item %d", i)
+		}
+
+		multiMedia = append(multiMedia, tg.InputSingleMedia{
+			RandomID: time.Now().UnixNano() + int64(i),
+			Media:    inputMedia,
+		})
+	}
+
+	return multiMedia, nil
 }
