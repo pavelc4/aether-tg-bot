@@ -51,6 +51,10 @@ func New() (*App, error) {
 	dispatcher.OnNewMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewMessage) error {
 		return router.OnMessage(ctx, e, update)
 	})
+
+	dispatcher.OnNewChannelMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewChannelMessage) error {
+		return router.OnChannelMessage(ctx, e, update)
+	})
 	
 	b := bot.New(client, router)
 	

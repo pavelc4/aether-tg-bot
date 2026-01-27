@@ -130,7 +130,9 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 			if media != nil {
 				album = append(album, media)
 				uploadedInfos = append(uploadedInfos, info)
-			}
+			} else {
+                logger.Error("Failed to create input media", "file", info.FileName)
+            }
 		}
 	}
 
@@ -205,7 +207,7 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 			
 			if err != nil {
 				logger.Error("Failed to send album batch, trying individual sends", 
-					"error", err,
+					"error", err.Error(),
 					"batch_size", len(batch),
 				)
 				
