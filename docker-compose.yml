@@ -9,6 +9,7 @@ services:
       - COBALT_API=${COBALT_API:-http://cobalt:9000}
       - TELEGRAM_APP_ID=${TELEGRAM_APP_ID}
       - TELEGRAM_APP_HASH=${TELEGRAM_APP_HASH}
+      - YTDLP_COOKIES=${YTDLP_COOKIES}
     depends_on:
       - cobalt
     networks:
@@ -21,6 +22,9 @@ services:
         reservations:
           cpus: "0.50"
           memory: 256M
+    volumes:
+      - ./cookies:/app/cookies
+      - ./data:/app/data
 
   cobalt:
     image: ghcr.io/imputnet/cobalt:latest
