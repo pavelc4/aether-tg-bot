@@ -49,11 +49,21 @@ func New() (*App, error) {
 	router := bot.NewRouter(dlHandler, adminHandler, basicHandler)
 	
 	dispatcher.OnNewMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewMessage) error {
-		return router.OnMessage(ctx, e, update)
+		go func() {
+			if err := router.OnMessage(ctx, e, update); err != nil {
+				logger.Error("OnMessage failed", "error", err)
+			}
+		}()
+		return nil
 	})
 
 	dispatcher.OnNewChannelMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewChannelMessage) error {
-		return router.OnChannelMessage(ctx, e, update)
+		go func() {
+			if err := router.OnChannelMessage(ctx, e, update); err != nil {
+				logger.Error("OnChannelMessage failed", "error", err)
+			}
+		}()
+		return nil
 	})
 	
 	b := bot.New(client, router)
