@@ -13,9 +13,7 @@ const (
 	EnvBotToken          = "BOT_TOKEN"
 	EnvCobaltAPI         = "COBALT_API"
 	EnvCobaltAPIKey      = "COBALT_API_KEY"
-	EnvYtdlpAPI          = "YTDLP_API"
 	EnvYtdlpCookies      = "YTDLP_COOKIES"
-	EnvTelegramAPI       = "TELEGRAM_API_URL"
 	EnvOwnerID           = "OWNER_ID"
 	EnvEnableAdaptive    = "ENABLE_ADAPTIVE_DOWNLOAD"
 	EnvMaxFileSize       = "MAX_FILE_SIZE_MB"
@@ -26,10 +24,8 @@ const (
 )
 
 const (
-	DefaultCobaltAPI            = "http://cobalt:9000"
-	DefaultYtdlpAPI             = "http://yt-dlp-api:8080"
-	DefaultTelegramAPI          = "http://localhost:8081"
-	DefaultMaxFileSize          = 50 // MB (Telegram limit)
+	DefaultCobaltAPI            = ""
+	DefaultMaxFileSize          = 2000 // MB (MTProto limit ~2GB/4GB)
 	DefaultEnableAdaptive       = true
 	DefaultUpdateTimeout        = 60
 	DefaultWorkerPoolSize       = 100
@@ -42,6 +38,7 @@ const (
 	DefaultBufferSize           = 5
 	DefaultUploadWorkers        = 3
 	DefaultRetryLimit           = 3
+	EnvMaxConcurrentStreams     = "MAX_CONCURRENT_STREAMS"
 )
 
 type Config struct {
@@ -53,17 +50,16 @@ type Config struct {
 	CookiesDir string
 	CobaltAPI         string
 	CobaltAPIKey      string
-	YtdlpAPI          string
 	YtdlpCookies      string
-	TelegramAPI       string
 	OwnerID           int64
 	EnableAdaptive    bool
 	MaxFileSizeMB     int64
-	MaxFileSizeBytes  int64
-	UpdateTimeout     int
-	WorkerPoolSize    int
-	ShutdownTimeout   time.Duration
-	ProcessingTimeout time.Duration
+	MaxFileSizeBytes     int64
+	MaxConcurrentStreams int
+	UpdateTimeout        int
+	WorkerPoolSize       int
+	ShutdownTimeout      time.Duration
+	ProcessingTimeout    time.Duration
 }
 
 var currentConfig *Config
@@ -82,11 +78,10 @@ func LoadConfig() *Config {
 		CookiesDir:        getEnvWithDefault("COOKIES_DIR", "cookies"),
 		CobaltAPI:         getEnvWithDefault(EnvCobaltAPI, DefaultCobaltAPI),
 		CobaltAPIKey:      os.Getenv(EnvCobaltAPIKey),
-		YtdlpAPI:          getEnvWithDefault(EnvYtdlpAPI, DefaultYtdlpAPI),
 		YtdlpCookies:      os.Getenv(EnvYtdlpCookies),
-		TelegramAPI:       getEnvWithDefault(EnvTelegramAPI, DefaultTelegramAPI),
-		EnableAdaptive:    getBoolEnv(EnvEnableAdaptive, DefaultEnableAdaptive),
-		UpdateTimeout:     getIntEnv(EnvUpdateTimeout, DefaultUpdateTimeout),
+		EnableAdaptive:       getBoolEnv(EnvEnableAdaptive, DefaultEnableAdaptive),
+		MaxConcurrentStreams: getIntEnv(EnvMaxConcurrentStreams, 0), // 0 means use adaptive/default
+		UpdateTimeout:        getIntEnv(EnvUpdateTimeout, DefaultUpdateTimeout),
 		WorkerPoolSize:    getIntEnv(EnvWorkerPoolSize, DefaultWorkerPoolSize),
 		ShutdownTimeout:   getDurationEnv(EnvShutdownTimeout, DefaultShutdownTimeout, time.Second),
 		ProcessingTimeout: getDurationEnv(EnvProcessingTimeout, DefaultProcessingTimeout, time.Minute),
@@ -145,25 +140,11 @@ func GetCobaltAPIKey() string {
 	return currentConfig.CobaltAPIKey
 }
 
-func GetYtdlpAPI() string {
-	if currentConfig == nil {
-		return DefaultYtdlpAPI
-	}
-	return currentConfig.YtdlpAPI
-}
-
 func GetYtdlpCookies() string {
 	if currentConfig == nil {
 		return ""
 	}
 	return currentConfig.YtdlpCookies
-}
-
-func GetTelegramApiURL() string {
-	if currentConfig == nil {
-		return DefaultTelegramAPI
-	}
-	return currentConfig.TelegramAPI
 }
 
 func GetOwnerID() int64 {
@@ -222,16 +203,13 @@ func ValidateConfig() error {
 		return fmt.Errorf("BOT_TOKEN is required")
 	}
 
-	if err := validateURL(GetCobaltAPI(), "COBALT_API"); err != nil {
-		return err
-	}
-
-	if err := validateURL(GetYtdlpAPI(), "YTDLP_API"); err != nil {
-		return err
-	}
-
-	if err := validateURL(GetTelegramApiURL(), "TELEGRAM_API_URL"); err != nil {
-		return err
+	if url := GetCobaltAPI(); url != "" {
+		if err := validateURL(url, "COBALT_API"); err != nil {
+			return err
+		}
+	} else {
+		// Warn if Cobalt is missing, but don't fail (unless required by design)
+		log.Println(" COBALT_API is not set. Cobalt provider might fail.")
 	}
 
 	log.Println(" Configuration loaded successfully:")
@@ -246,15 +224,14 @@ func PrintConfig() {
 		cfg = LoadConfig()
 	}
 
-	log.Println("📋 Current Configuration:")
+	log.Println(" Current Configuration:")
 	log.Printf("  Bot Token: %s", maskToken(cfg.BotToken))
 	log.Printf("  Cobalt API: %s", cfg.CobaltAPI)
 	log.Printf("  Cobalt API Key: %s", maskToken(cfg.CobaltAPIKey))
-	log.Printf("  yt-dlp API: %s", cfg.YtdlpAPI)
 	log.Printf("  yt-dlp Cookies: %s", cfg.YtdlpCookies)
-	log.Printf("  Telegram API: %s", cfg.TelegramAPI)
 	log.Printf("  Owner ID: %d", cfg.OwnerID)
 	log.Printf("  Adaptive Download: %v", cfg.EnableAdaptive)
+	log.Printf("  Max Concurrent Streams: %d", cfg.MaxConcurrentStreams)
 	log.Printf("  Max File Size: %d MB", cfg.MaxFileSizeMB)
 	log.Printf("  Update Timeout: %d seconds", cfg.UpdateTimeout)
 	log.Printf("  Worker Pool Size: %d", cfg.WorkerPoolSize)
@@ -262,7 +239,7 @@ func PrintConfig() {
 	log.Printf("  Processing Timeout: %v", cfg.ProcessingTimeout)
 }
 func ReloadConfig() {
-	log.Println("🔄 Reloading configuration...")
+	log.Println(" Reloading configuration...")
 	LoadConfig()
 	time.Sleep(100 * time.Millisecond)
 	log.Println(" Configuration reloaded")

@@ -10,6 +10,7 @@ import (
 	"github.com/pavelc4/aether-tg-bot/internal/streaming"
 	"github.com/pavelc4/aether-tg-bot/internal/telegram"
 	"github.com/pavelc4/aether-tg-bot/pkg/logger"
+	"runtime"
 )
 
 type App struct {
@@ -26,8 +27,19 @@ func New() (*App, error) {
 	provider.Register(provider.NewTikTok())
 
 
+	maxStreams := cfg.MaxConcurrentStreams
+	if maxStreams <= 0 {
+		maxStreams = runtime.NumCPU() * 4
+		if maxStreams < config.DefaultMaxConcurrentStreams {
+			maxStreams = config.DefaultMaxConcurrentStreams
+		}
+		logger.Info("Using adaptive concurrency", "cores", runtime.NumCPU(), "limit", maxStreams)
+	} else {
+		logger.Info("Using fixed concurrency", "limit", maxStreams)
+	}
+
 	streamMgr := streaming.NewManager(streaming.Config{
-		MaxConcurrentStreams: config.DefaultMaxConcurrentStreams,
+		MaxConcurrentStreams: maxStreams,
 		UploadWorkers:        config.DefaultUploadWorkers,
 		BufferSize:           config.DefaultBufferSize,
 		ChunkSize:            config.DefaultChunkSize,
