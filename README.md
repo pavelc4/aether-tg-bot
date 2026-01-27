@@ -79,7 +79,7 @@ YTDLP_COOKIES=cookies.txt
 
 # Performance Tuning
 MAX_CONCURRENT_STREAMS=0      # 0 = Automatically adaptive (NumCPU * 4)
-Chunk_SIZE=1048576            # Upload chunk size (1MB default)
+Chunk_SIZE=524288             # Upload chunk size (512KB default)
 MAX_FILE_SIZE_MB=2000         # 2GB MTProto limit
 ```
 
@@ -91,7 +91,7 @@ MAX_FILE_SIZE_MB=2000         # 2GB MTProto limit
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/aether-bot.git
+git clone https://github.com/pavelc4/aether-bot.git
 cd aether-bot
 
 # Configure environment

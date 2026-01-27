@@ -35,7 +35,7 @@ const (
 	// Streaming Defaults
 	DefaultMaxConcurrentStreams = 8
 	DefaultChunkSize            = 512 * 1024 // 512KB
-	DefaultBufferSize           = 5
+	DefaultBufferSize           = 8
 	DefaultUploadWorkers        = 3
 	DefaultRetryLimit           = 3
 	EnvMaxConcurrentStreams     = "MAX_CONCURRENT_STREAMS"
@@ -139,14 +139,12 @@ func GetCobaltAPIKey() string {
 	}
 	return currentConfig.CobaltAPIKey
 }
-
 func GetYtdlpCookies() string {
 	if currentConfig == nil {
 		return ""
 	}
 	return currentConfig.YtdlpCookies
 }
-
 func GetOwnerID() int64 {
 	if currentConfig == nil {
 		return 0
