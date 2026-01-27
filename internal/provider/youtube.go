@@ -114,13 +114,20 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Op
 		"res", fmt.Sprintf("%dx%d", meta.Width, meta.Height),
 		"dur", meta.Duration,
 	)
+	mime := "video/" + meta.Ext
+	if opts.AudioOnly || meta.Ext == "m4a" || meta.Ext == "mp3" {
+		mime = "audio/" + meta.Ext
+		if meta.Ext == "m4a" {
+			mime = "audio/mp4"
+		}
+	}
 
 	return []VideoInfo{{
 		URL:      finalURL,
 		FileName: filename,
 		Title:    meta.Title,
 		FileSize: size,
-		MimeType: "video/" + meta.Ext,
+		MimeType: mime,
 		Duration: int(meta.Duration),
 		Width:    meta.Width,
 		Height:   meta.Height,

@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf16"
 
@@ -73,84 +74,109 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 	uploader := telegram.NewUploader(api)
 	startTime := time.Now()
 
-	var album []tg.InputMediaClass
-	var uploadedInfos []provider.VideoInfo
+	album := make([]tg.InputMediaClass, len(infos))
+	uploadedInfos := make([]provider.VideoInfo, len(infos))
+	type result struct {
+		index int
+		media tg.InputMediaClass
+		info  provider.VideoInfo
+		err   error
+	}
+	
+	var wg sync.WaitGroup
 
 	for i, info := range infos {
-		if len(infos) > 1 {
-			editMsg(fmt.Sprintf("📂 processing item %d/%d: %s", i+1, len(infos), info.FileName))
-		}
+		wg.Add(1)
+		
+		go func(i int, info provider.VideoInfo) {
+			defer wg.Done()
+			
+			if len(infos) > 1 {
 
-		input := streaming.StreamInput{
-			URL:      info.URL,
-			Filename: info.FileName,
-			Size:     info.FileSize,
-			Headers:  info.Headers,
-			MIME:     info.MimeType,
-			Duration: info.Duration,
-			Width:    info.Width,
-			Height:   info.Height,
-		}
+			}
 
-		// Detect if this is a photo
-		isPhoto := strings.HasPrefix(input.MIME, "image/") ||
-			strings.HasSuffix(strings.ToLower(input.Filename), ".jpg") ||
-			strings.HasSuffix(strings.ToLower(input.Filename), ".jpeg") ||
-			strings.HasSuffix(strings.ToLower(input.Filename), ".png") ||
-			strings.HasSuffix(strings.ToLower(input.Filename), ".webp")
+			input := streaming.StreamInput{
+				URL:      info.URL,
+				Filename: info.FileName,
+				Size:     info.FileSize,
+				Headers:  info.Headers,
+				MIME:     info.MimeType,
+				Duration: info.Duration,
+				Width:    info.Width,
+				Height:   info.Height,
+			}
 
-		// Use random ID for fileID to avoid collisions
-		fileID := rand.Int63()
-		isBig := !isPhoto && input.Size > 10*1024*1024
 
-		logger.Info("Upload strategy",
-			"file", input.Filename,
-			"size", input.Size,
-			"mime", input.MIME,
-			"isPhoto", isPhoto,
-			"isBig", isBig,
-			"fileID", fileID,
-		)
+			isPhoto := strings.HasPrefix(input.MIME, "image/") ||
+				strings.HasSuffix(strings.ToLower(input.Filename), ".jpg") ||
+				strings.HasSuffix(strings.ToLower(input.Filename), ".jpeg") ||
+				strings.HasSuffix(strings.ToLower(input.Filename), ".png") ||
+				strings.HasSuffix(strings.ToLower(input.Filename), ".webp")
 
-		uploadFn := func(ctx context.Context, chunk streaming.Chunk, _ int64) error {
-			return uploader.UploadChunk(ctx, chunk, fileID, isBig)
-		}
+			// Use random ID for fileID to avoid collisions
+			fileID := rand.Int63()
+			isBig := !isPhoto && input.Size > 10*1024*1024
 
-		var actualParts int
-		var md5sum string
-		actualParts, md5sum, err = h.streamMgr.Stream(ctx, input, uploadFn, func(read, total int64) {})
+			logger.Info("Upload strategy",
+				"file", input.Filename,
+				"size", input.Size,
+				"mime", input.MIME,
+				"isPhoto", isPhoto,
+				"isBig", isBig,
+				"fileID", fileID,
+			)
 
-		if err != nil {
-			logger.Error("Failed to stream item", "index", i, "error", err)
-			continue
-		}
+			uploadFn := func(ctx context.Context, chunk streaming.Chunk, _ int64) error {
+				return uploader.UploadChunk(ctx, chunk, fileID, isBig)
+			}
 
-		if actualParts > 0 {
-			media := h.createInputMedia(input, fileID, actualParts, isBig, md5sum)
-			if media != nil {
-				album = append(album, media)
-				uploadedInfos = append(uploadedInfos, info)
-			} else {
-                logger.Error("Failed to create input media", "file", info.FileName)
-            }
+			actualParts, md5sum, err := h.streamMgr.Stream(ctx, input, uploadFn, func(read, total int64) {})
+
+			if err != nil {
+				logger.Error("Failed to stream item", "index", i, "error", err)
+				return 
+			}
+
+			if actualParts > 0 {
+				media := h.createInputMedia(input, fileID, actualParts, isBig, md5sum, audioOnly)
+				if media != nil {
+					album[i] = media
+					uploadedInfos[i] = info
+				} else {
+					logger.Error("Failed to create input media", "file", info.FileName)
+				}
+			}
+		}(i, info)
+	}
+	
+	wg.Wait()
+
+	// Filter out nils (failed downloads)
+	var finalAlbum []tg.InputMediaClass
+	var finalInfos []provider.VideoInfo
+	
+	for i := range album {
+		if album[i] != nil {
+			finalAlbum = append(finalAlbum, album[i])
+			finalInfos = append(finalInfos, uploadedInfos[i])
 		}
 	}
 
-	if len(album) == 0 {
+	if len(finalAlbum) == 0 {
 		editMsg("❌ No items were successfully downloaded.")
 		return nil
 	}
 
-	logger.Info("Starting batch send", "total_items", len(album))
+	logger.Info("Starting batch send", "total_items", len(finalAlbum))
 
-	for i := 0; i < len(album); i += MaxAlbumSize {
+	for i := 0; i < len(finalAlbum); i += MaxAlbumSize {
 		end := i + MaxAlbumSize
-		if end > len(album) {
-			end = len(album)
+		if end > len(finalAlbum) {
+			end = len(finalAlbum)
 		}
 
-		batch := album[i:end]
-		batchInfos := uploadedInfos[i:end]
+		batch := finalAlbum[i:end]
+		batchInfos := finalInfos[i:end]
 
 		logger.Info("Sending batch", "start", i, "end", end, "count", len(batch))
 
@@ -285,8 +311,9 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 	return nil
 }
 
-func (h *DownloadHandler) createInputMedia(input streaming.StreamInput, fileID int64, parts int, isBig bool, md5sum string) tg.InputMediaClass {
+func (h *DownloadHandler) createInputMedia(input streaming.StreamInput, fileID int64, parts int, isBig bool, md5sum string, isAudio bool) tg.InputMediaClass {
 	var inputFile tg.InputFileClass
+	var mime string
 
 	if isBig {
 		inputFile = &tg.InputFileBig{
@@ -303,9 +330,22 @@ func (h *DownloadHandler) createInputMedia(input streaming.StreamInput, fileID i
 		}
 	}
 
-	mime := input.MIME
+	mime = input.MIME
 	if mime == "" {
 		mime = "video/mp4"
+	}
+
+	isMimeAudio := strings.HasPrefix(mime, "audio/")
+	isExtAudio := strings.HasSuffix(input.Filename, ".mp3") || strings.HasSuffix(input.Filename, ".m4a") || strings.HasSuffix(input.Filename, ".ogg")
+	
+	if (isAudio || isExtAudio) && !isMimeAudio {
+		if strings.HasSuffix(input.Filename, ".m4a") {
+			mime = "audio/mp4"
+		} else if strings.HasSuffix(input.Filename, ".mp3") {
+			mime = "audio/mpeg"
+		} else {
+			mime = "audio/mpeg" // Fallback
+		}
 	}
 
 	logger.Info("Creating media input", 
@@ -313,6 +353,7 @@ func (h *DownloadHandler) createInputMedia(input streaming.StreamInput, fileID i
 		"mime", mime, 
 		"parts", parts, 
 		"isBig", isBig,
+		"isAudio", isAudio,
 	)
 
 
@@ -335,8 +376,7 @@ func (h *DownloadHandler) createInputMedia(input streaming.StreamInput, fileID i
 		}
 	}
 
-	// Audio files
-	if strings.HasPrefix(mime, "audio/") {
+	if strings.HasPrefix(mime, "audio/") || isAudio {
 		logger.Info("Creating audio document", "file", input.Filename)
 		return &tg.InputMediaUploadedDocument{
 			File:     inputFile,
