@@ -30,8 +30,42 @@ func (r *Router) OnMessage(ctx context.Context, e tg.Entities, update *tg.Update
 	if !ok {
 		return nil
 	}
+	if err := r.HandleMessage(ctx, e, msg); err != nil {
+		logger.Error("HandleMessage (Private/Group) failed", "error", err)
+		return err
+	}
+	return nil
+}
+
+func (r *Router) OnChannelMessage(ctx context.Context, e tg.Entities, update *tg.UpdateNewChannelMessage) error {
+	msg, ok := update.Message.(*tg.Message)
+	if !ok {
+		return nil
+	}
+	if err := r.HandleMessage(ctx, e, msg); err != nil {
+		logger.Error("HandleMessage (Channel) failed", "error", err)
+		return err
+	}
+	return nil
+}
+
+func (r *Router) HandleMessage(ctx context.Context, e tg.Entities, msg *tg.Message) error {
+	logger.Info("HandleMessage called", "id", msg.ID, "text", msg.Message, "out", msg.Out)
 	
+	if msg.Out {
+		return nil
+	}
+
 	text := msg.Message
+	if strings.HasPrefix(text, "/") {
+		parts := strings.Fields(text)
+		if len(parts) > 0 {
+			cmd := parts[0]
+			if idx := strings.Index(cmd, "@"); idx != -1 {
+				text = cmd[:idx] + text[len(cmd):]
+			}
+		}
+	}
 
 	if strings.HasPrefix(text, "/start") {
 		return r.basic.HandleStart(ctx, e, msg)

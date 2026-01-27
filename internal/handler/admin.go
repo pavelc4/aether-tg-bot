@@ -97,6 +97,11 @@ func formatBytes(b uint64) string {
 }
 
 func getSenderID(msg *tg.Message) int64 {
+	if from, ok := msg.GetFromID(); ok {
+		if user, ok := from.(*tg.PeerUser); ok {
+			return user.UserID
+		}
+	}
 	if peer, ok := msg.PeerID.(*tg.PeerUser); ok {
 		return peer.UserID
 	}
