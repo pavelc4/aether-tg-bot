@@ -8,9 +8,6 @@
     <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&colorA=363A4F&logo=docker&logoColor=D9E0EE">
     <img src="https://img.shields.io/badge/MTProto-229ED9?style=for-the-badge&colorA=363A4F&logo=telegram&logoColor=D9E0EE">
 </p>
-
-
-
 ---
 
 ## About
@@ -77,11 +74,13 @@ OWNER_ID=123456789
 
 # External APIs
 COBALT_API=http://cobalt:9000
-YTDLP_API=http://yt-dlp:8080
+# COBALT_API_KEY=your_key_if_needed
+YTDLP_COOKIES=cookies.txt
 
 # Performance Tuning
-MAX_CONCURRENT_STREAMS=8      # Maximum parallel downloads
-CHUNK_SIZE=1048576            # Upload chunk size (1MB default)
+MAX_CONCURRENT_STREAMS=0      # 0 = Automatically adaptive (NumCPU * 4)
+Chunk_SIZE=1048576            # Upload chunk size (1MB default)
+MAX_FILE_SIZE_MB=2000         # 2GB MTProto limit
 ```
 
 ---
@@ -174,4 +173,3 @@ Aether is open-sourced software licensed under the **MIT License**.
 See the [LICENSE](LICENSE) file for more information.
 
 ---
-
