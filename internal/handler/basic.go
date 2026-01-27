@@ -101,6 +101,11 @@ func (h *BasicHandler) HandleSpeedtest(ctx context.Context, e tg.Entities, msg *
 					msgID = msg.ID
 				}
 			}
+			if m, ok := update.(*tg.UpdateNewChannelMessage); ok {
+				if msg, ok := m.Message.(*tg.Message); ok {
+					msgID = msg.ID
+				}
+			}
 		}
 	}
 
