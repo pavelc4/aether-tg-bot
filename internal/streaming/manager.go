@@ -18,16 +18,6 @@ type Manager struct {
 
 
 func NewManager(cfg Config) *Manager {
-	// Ensure global buffer pool matches chunk size or create local pool
-	// For now, we assume global pool is used, but we might ideally resize it.
-	// Since buffer package has a global Default, we can't easily resize it globally without side effects.
-	// But `pipeline.go` uses `buffer.Get()`.
-	// Correct approach: Update `pkg/buffer` to allow custom pools or `Recycle`.
-	// For this implementation, we will proceed assuming 512KB chunks OR update buffer pool.
-	// Let's stick to 512KB buffers if using default pool, or update Config.ChunkSize to 512KB.
-	// User requested 1MB? The config default is 1MB.
-	// So we should probably update `pkg/buffer/pool.go` or use `make` in implementation if size mismatch.
-	
 	return &Manager{
 		config:   cfg,
 		state:    NewStateManager(),
