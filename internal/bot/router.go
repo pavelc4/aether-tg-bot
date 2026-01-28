@@ -109,6 +109,9 @@ func (r *Router) HandleMessage(ctx context.Context, e tg.Entities, msg *tg.Messa
 			return r.download.Handle(ctx, e, msg, url, false)
 		}
 	}
+	if strings.HasPrefix(text, "/") {
+		return r.basic.HandleUnknown(ctx, e, msg)
+	}
 
 	return nil
 }
