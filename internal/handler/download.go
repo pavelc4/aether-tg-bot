@@ -14,6 +14,7 @@ import (
 	"github.com/gotd/td/telegram/message"
 	"github.com/gotd/td/tg"
 
+	"github.com/pavelc4/aether-tg-bot/internal/cache"
 	"github.com/pavelc4/aether-tg-bot/internal/provider"
 	"github.com/pavelc4/aether-tg-bot/internal/stats"
 	"github.com/pavelc4/aether-tg-bot/internal/streaming"
@@ -61,6 +62,52 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 		if err != nil {
 			logger.Error("Failed to edit message", "msg_id", sentMsgID, "error", err)
 		}
+	}
+
+	cacheKey := fmt.Sprintf("%s|%t", url, audioOnly)
+	if cached := cache.GetInstance().Get(cacheKey); cached != nil {
+		logger.Info("Cache hit", "url", url)
+		var media tg.InputMediaClass
+		if cached.Type == cache.TypePhoto {
+			media = &tg.InputMediaPhoto{
+				ID: &tg.InputPhoto{
+					ID:            cached.ID,
+					AccessHash:    cached.AccessHash,
+					FileReference: cached.FileReference,
+				},
+			}
+		} else {
+			media = &tg.InputMediaDocument{
+				ID: &tg.InputDocument{
+					ID:            cached.ID,
+					AccessHash:    cached.AccessHash,
+					FileReference: cached.FileReference,
+				},
+			}
+		}
+
+		dummyInfo := provider.VideoInfo{
+			Title:    cached.Title,
+			FileSize: cached.Size,
+		}
+		userName := getUserName(e, msg)
+		captionHTML := h.buildCaption(dummyInfo, cached.Provider, 0, url, userName)
+		captionText, entities := h.parseCaptionEntities(captionHTML)
+
+		_, err := api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
+			Peer:     inputPeer,
+			ReplyTo:  &tg.InputReplyToMessage{ReplyToMsgID: msg.ID},
+			Media:    media,
+			Message:  captionText,
+			Entities: entities,
+			RandomID: time.Now().UnixNano(),
+		})
+		
+		if err == nil {
+			stats.TrackDownload()
+			return nil
+		}
+		logger.Warn("Failed to send cached media, falling back to download", "error", err)
 	}
 
 	infos, providerName, err := provider.Resolve(ctx, url, provider.Options{AudioOnly: audioOnly})
@@ -189,7 +236,7 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 			captionHTML := h.buildCaption(batchInfos[0], providerName, time.Since(startTime), url, userName)
 			captionText, entities = h.parseCaptionEntities(captionHTML)
 
-			_, err := api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
+			updates, err := api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
 				Peer:     inputPeer,
 				ReplyTo:  &tg.InputReplyToMessage{ReplyToMsgID: msg.ID},
 				Media:    batch[0],
@@ -202,6 +249,13 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 				editMsg(fmt.Sprintf("❌ Upload Error (Single): %v", err))
 			} else {
 				logger.Info(" Successfully sent single media")
+				if media := getMediaFromUpdates(updates); media != nil {
+					media.Title = batchInfos[0].Title
+					media.Size = batchInfos[0].FileSize
+					media.Provider = providerName
+					
+					cache.GetInstance().Set(cacheKey, media)
+				}
 			}
 		} else {
 			multiMedia, err := h.prepareAlbum(ctx, api, inputPeer, batch)
@@ -559,6 +613,57 @@ func getUserName(e tg.Entities, msg *tg.Message) string {
 	}
 	return "User"
 }
+func getMediaFromUpdates(updates tg.UpdatesClass) *cache.CachedMedia {
+	var msg *tg.Message
+	
+	switch u := updates.(type) {
+	case *tg.UpdateShortSentMessage:
+		return nil
+	case *tg.Updates:
+		for _, update := range u.Updates {
+			if m, ok := update.(*tg.UpdateNewMessage); ok {
+				if mm, ok := m.Message.(*tg.Message); ok {
+					msg = mm
+					break
+				}
+			}
+			if m, ok := update.(*tg.UpdateNewChannelMessage); ok {
+				if mm, ok := m.Message.(*tg.Message); ok {
+					msg = mm
+					break
+				}
+			}
+		}
+	}
+
+	if msg == nil {
+		return nil
+	}
+
+	switch m := msg.Media.(type) {
+	case *tg.MessageMediaPhoto:
+		if photo, ok := m.Photo.(*tg.Photo); ok {
+			return &cache.CachedMedia{
+				ID:            photo.ID,
+				AccessHash:    photo.AccessHash,
+				FileReference: photo.FileReference,
+				Type:          cache.TypePhoto,
+			}
+		}
+	case *tg.MessageMediaDocument:
+		if doc, ok := m.Document.(*tg.Document); ok {
+			return &cache.CachedMedia{
+				ID:            doc.ID,
+				AccessHash:    doc.AccessHash,
+				FileReference: doc.FileReference,
+				Type:          cache.TypeDocument,
+			}
+		}
+	}
+	
+	return nil
+}
+
 func (h *DownloadHandler) prepareAlbum(ctx context.Context, api *tg.Client, peer tg.InputPeerClass, batch []tg.InputMediaClass) ([]tg.InputSingleMedia, error) {
 	var multiMedia []tg.InputSingleMedia
 
