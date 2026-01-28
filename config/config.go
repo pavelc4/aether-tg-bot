@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -39,8 +40,13 @@ const (
 	DefaultChunkSize            = 512 * 1024 // 512KB
 	DefaultBufferSize           = 8
 	DefaultUploadWorkers        = 3
+	DefaultMinUploadWorkers     = 1
+	DefaultMaxUploadWorkers     = 8
 	DefaultRetryLimit           = 3
+	
 	EnvMaxConcurrentStreams     = "MAX_CONCURRENT_STREAMS"
+	EnvMinUploadWorkers         = "MIN_UPLOAD_WORKERS"
+	EnvMaxUploadWorkers         = "MAX_UPLOAD_WORKERS"
 )
 
 type Config struct {
@@ -62,6 +68,8 @@ type Config struct {
 	WorkerPoolSize       int
 	ShutdownTimeout      time.Duration
 	ProcessingTimeout    time.Duration
+	MinUploadWorkers int
+	MaxUploadWorkers int
 }
 
 var currentConfig *Config
@@ -88,6 +96,21 @@ func LoadConfig() *Config {
 		WorkerPoolSize:    getIntEnv(EnvWorkerPoolSize, DefaultWorkerPoolSize),
 		ShutdownTimeout:   getDurationEnv(EnvShutdownTimeout, DefaultShutdownTimeout, time.Second),
 		ProcessingTimeout: getDurationEnv(EnvProcessingTimeout, DefaultProcessingTimeout, time.Minute),
+		MinUploadWorkers:  getIntEnv(EnvMinUploadWorkers, DefaultMinUploadWorkers),
+	}
+	cores := runtime.NumCPU()
+	defaultMaxUploads := cores * 4
+	if defaultMaxUploads < 8 {
+		defaultMaxUploads = 8
+	}
+	if defaultMaxUploads > 64 {
+		defaultMaxUploads = 64
+	}
+	
+	if valStr := os.Getenv(EnvMaxUploadWorkers); valStr != "" {
+		cfg.MaxUploadWorkers = getIntEnv(EnvMaxUploadWorkers, defaultMaxUploads)
+	} else {
+		cfg.MaxUploadWorkers = defaultMaxUploads
 	}
 
 	// Owner ID
@@ -236,6 +259,7 @@ func PrintConfig() {
 	log.Printf("  Max File Size: %d MB", cfg.MaxFileSizeMB)
 	log.Printf("  Update Timeout: %d seconds", cfg.UpdateTimeout)
 	log.Printf("  Worker Pool Size: %d", cfg.WorkerPoolSize)
+	log.Printf("  Max Upload Workers: %d (Dynamic)", cfg.MaxUploadWorkers)
 	log.Printf("  Shutdown Timeout: %v", cfg.ShutdownTimeout)
 	log.Printf("  Processing Timeout: %v", cfg.ProcessingTimeout)
 }

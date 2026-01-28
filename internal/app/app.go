@@ -41,6 +41,8 @@ func New() (*App, error) {
 
 	streamMgr := streaming.NewManager(streaming.Config{
 		MaxConcurrentStreams: maxStreams,
+		MinUploadWorkers:     cfg.MinUploadWorkers,
+		MaxUploadWorkers:     cfg.MaxUploadWorkers,
 		UploadWorkers:        config.DefaultUploadWorkers,
 		BufferSize:           config.DefaultBufferSize,
 		ChunkSize:            config.DefaultChunkSize,
