@@ -169,3 +169,14 @@ func (h *BasicHandler) HandleSpeedtest(ctx context.Context, e tg.Entities, msg *
 	_, err = sender.To(peer).Edit(msgID).StyledText(ctx, html.String(nil, result))
 	return err
 }
+
+func (h *BasicHandler) HandleUnknown(ctx context.Context, e tg.Entities, msg *tg.Message) error {
+	peer, err := resolvePeer(msg.PeerID, e)
+	if err != nil {
+		return err
+	}
+
+	sender := message.NewSender(h.client.API())
+	_, err = sender.To(peer).Reply(msg.ID).Text(ctx, "Unknown command. Try /help to see available commands.")
+	return err
+}
