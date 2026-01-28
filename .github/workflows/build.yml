@@ -1,0 +1,81 @@
+name: Manual Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag (optional)"
+        required: false
+        default: "manual-build"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: amd64
+            goamd64: v3
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: linux
+            goarch: "386"
+          - goos: windows
+            goarch: "386"
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          GOAMD64: ${{ matrix.goamd64 }}
+          CGO_ENABLED: 0
+        run: |
+          EXT=""
+          SUFFIX=""
+
+          if [ "$GOOS" = "windows" ]; then
+            EXT=".exe"
+          fi
+
+          if [ "$GOAMD64" = "v3" ]; then
+            SUFFIX="-v3"
+          fi
+
+          echo "Building for $GOOS/$GOARCH $GOAMD64..."
+          go build -ldflags="-w -s -X main.version=${{ github.event.inputs.tag || 'dev' }}" \
+            -trimpath \
+            -o aether-bot-${{ matrix.goos }}-${{ matrix.goarch }}$SUFFIX$EXT ./cmd/bot
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-bot-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goamd64 && format('-{0}', matrix.goamd64) || '' }}
+          path: aether-bot-*
+          if-no-files-found: error
+          retention-days: 7
