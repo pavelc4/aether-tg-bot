@@ -73,7 +73,7 @@ jobs:
             -o aether-bot-${{ matrix.goos }}-${{ matrix.goarch }}$SUFFIX$EXT ./cmd/bot
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: aether-bot-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goamd64 && format('-{0}', matrix.goamd64) || '' }}
           path: aether-bot-*
