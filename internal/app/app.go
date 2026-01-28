@@ -6,6 +6,7 @@ import (
 	"github.com/pavelc4/aether-tg-bot/config"
 	"github.com/pavelc4/aether-tg-bot/internal/bot"
 	"github.com/pavelc4/aether-tg-bot/internal/handler"
+	"github.com/pavelc4/aether-tg-bot/internal/middleware"
 	"github.com/pavelc4/aether-tg-bot/internal/provider"
 	"github.com/pavelc4/aether-tg-bot/internal/streaming"
 	"github.com/pavelc4/aether-tg-bot/internal/telegram"
@@ -61,20 +62,28 @@ func New() (*App, error) {
 	router := bot.NewRouter(dlHandler, adminHandler, basicHandler)
 	
 	dispatcher.OnNewMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewMessage) error {
-		go func() {
+		handler := func() {
 			if err := router.OnMessage(ctx, e, update); err != nil {
 				logger.Error("OnMessage failed", "error", err)
 			}
-		}()
+		}
+		go middleware.Chain(handler, 
+			middleware.Recover,
+			func(next func()) func() { return middleware.Logger("OnNewMessage", next) },
+		)()
 		return nil
 	})
 
 	dispatcher.OnNewChannelMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewChannelMessage) error {
-		go func() {
+		handler := func() {
 			if err := router.OnChannelMessage(ctx, e, update); err != nil {
 				logger.Error("OnChannelMessage failed", "error", err)
 			}
-		}()
+		}
+		go middleware.Chain(handler, 
+			middleware.Recover,
+			func(next func()) func() { return middleware.Logger("OnNewChannelMessage", next) },
+		)()
 		return nil
 	})
 	
