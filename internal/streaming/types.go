@@ -8,6 +8,8 @@ import (
 type Config struct {
 	MaxConcurrentStreams int
 	UploadWorkers        int
+	MinUploadWorkers     int
+	MaxUploadWorkers     int
 	BufferSize           int
 	ChunkSize            int64
 	RetryLimit           int

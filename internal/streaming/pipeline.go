@@ -57,7 +57,29 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	for i := 0; i < p.config.UploadWorkers; i++ {
+	numWorkers := 1
+	if state.TotalSize > 0 {
+		calculated := int(state.TotalSize / (3 * 1024 * 1024))
+		if calculated > p.config.MaxUploadWorkers {
+			numWorkers = p.config.MaxUploadWorkers
+		} else if calculated < p.config.MinUploadWorkers {
+			numWorkers = p.config.MinUploadWorkers
+		} else {
+			numWorkers = calculated
+		}
+	} else {
+		numWorkers = p.config.MinUploadWorkers
+	}
+	if numWorkers < 1 { 
+		numWorkers = 1 
+	}
+
+	logger.Info("Starting upload pipeline", 
+		"workers", numWorkers, 
+		"size_mb", state.TotalSize/1024/1024,
+	)
+
+	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
