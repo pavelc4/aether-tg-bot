@@ -53,8 +53,14 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 
 	sentMsgID := getMsgID(sentUpdates)
 
-	editMsg := func(text string) {
-		_, err := sender.To(inputPeer).Edit(sentMsgID).Text(ctx, text)
+	editMsg := func(htmlText string) {
+		parsedText, entities := messaging.ParseCaptionEntities(htmlText)
+		_, err := api.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
+			Peer:     inputPeer,
+			ID:       sentMsgID,
+			Message:  parsedText,
+			Entities: entities,
+		})
 		if err != nil {
 			logger.Error("Failed to edit message", "msg_id", sentMsgID, "error", err)
 		}
@@ -98,16 +104,18 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 		logger.Warn("Failed to send cached media, falling back to download", "error", err)
 	}
 
+
+	startTime := time.Now()
+
 	infos, providerName, err := provider.Resolve(ctx, url, provider.Options{AudioOnly: audioOnly})
 	if err != nil {
 		editMsg(fmt.Sprintf("❌ Failed from %s: %v", providerName, err))
 		return err
 	}
 
-	editMsg(fmt.Sprintf("🚀 starting download from %s (found %d items)", providerName, len(infos)))
+	editMsg(messaging.FormatInitialProgress(infos))
 
 	uploader := telegram.NewUploader(api)
-	startTime := time.Now()
 
 	downloader := download.NewDownloader(h.streamMgr, uploader)
 	finalAlbum, finalInfos := downloader.Download(ctx, infos, audioOnly)
