@@ -27,9 +27,18 @@ func NewPipeline(cfg Config, uploadFn func(context.Context, Chunk, int64) error,
 }
 
 func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamState) (int, string, error) {
-	body, size, _, err := pkghttp.StreamRequest(ctx, input.URL, input.Headers)
-	if err != nil {
-		return 0, "", fmt.Errorf("stream open failed: %w", err)
+	var body io.ReadCloser
+	var size int64
+	var err error
+
+	if input.Reader != nil {
+		body = input.Reader
+		size = input.Size
+	} else {
+		body, size, _, err = pkghttp.StreamRequest(ctx, input.URL, input.Headers)
+		if err != nil {
+			return 0, "", fmt.Errorf("stream open failed: %w", err)
+		}
 	}
 	defer body.Close()
 
