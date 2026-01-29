@@ -3,10 +3,14 @@ package download
 import (
 	"context"
 	"math/rand"
+	"os/exec"
+	"bytes"
+	"io"
 	"strings"
 	"sync"
 
 	"github.com/gotd/td/tg"
+	"github.com/pavelc4/aether-tg-bot/config"
 	"github.com/pavelc4/aether-tg-bot/internal/provider"
 	"github.com/pavelc4/aether-tg-bot/internal/streaming"
 	"github.com/pavelc4/aether-tg-bot/internal/telegram"
@@ -46,6 +50,50 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 				Duration: info.Duration,
 				Width:    info.Width,
 				Height:   info.Height,
+			}
+			
+			isHLS := strings.Contains(info.URL, ".m3u8") || strings.Contains(info.URL, ".mpd") || strings.Contains(info.URL, "manifest")
+			
+			if isHLS || info.UsePipe {
+				logger.Info("Using piped download strategy", "url", info.URL, "file", info.FileName, "hls", isHLS, "pipe_flag", info.UsePipe)
+				
+				args := []string{
+					"-o", "-",
+					"--rm-cache-dir",
+					"--js-runtimes", "bun",
+					"--retries", "10",
+					"--fragment-retries", "10",
+					info.URL,
+				}
+				
+				if info.UsePipe {
+					args = append([]string{"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best", "--merge-output-format", "mp4"}, args...)
+				}
+
+				if cookies := config.GetYtdlpCookies(); cookies != "" {
+					args = append([]string{"--cookies", cookies}, args...)
+				}
+				
+				cmd := exec.CommandContext(ctx, "yt-dlp", args...)
+				var stderr bytes.Buffer
+				cmd.Stderr = &stderr
+				
+				stdout, err := cmd.StdoutPipe()
+				if err != nil {
+					logger.Error("Failed to create stdout pipe", "error", err)
+					return
+				}
+				
+				if err := cmd.Start(); err != nil {
+					logger.Error("Failed to start yt-dlp pipe", "error", err, "stderr", stderr.String())
+					return
+				}
+				
+				input.Reader = &cmdReader{
+					ReadCloser: stdout,
+					cmd:        cmd,
+					stderr:     &stderr,
+				}
 			}
 
 			isPhoto := strings.HasPrefix(input.MIME, "image/") ||
@@ -103,4 +151,24 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 	}
 
 	return finalAlbum, finalInfos
+}
+
+type cmdReader struct {
+	io.ReadCloser
+	cmd    *exec.Cmd
+	stderr *bytes.Buffer
+}
+
+func (c *cmdReader) Close() error {
+	err := c.ReadCloser.Close()
+	waitErr := c.cmd.Wait()
+
+	if waitErr != nil {
+		logger.Error("Pipe process failed",
+			"error", waitErr,
+			"stderr", c.stderr.String(),
+		)
+		return waitErr
+	}
+	return err
 }
