@@ -15,6 +15,7 @@ type VideoInfo struct {
 	Width    int               // Video width
 	Height   int               // Video height
 	Headers  map[string]string // Required headers for the request (cookies, referer, etc.)
+	UsePipe  bool              // If true, use yt-dlp pipe instead of direct download
 }
 
 type Options struct {
