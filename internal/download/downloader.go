@@ -68,16 +68,20 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 				}
 				
 				if info.UsePipe {
-					args = append([]string{"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best", "--merge-output-format", "mkv"}, args...)
-					
-					if !strings.HasSuffix(strings.ToLower(info.FileName), ".mkv") {
-						ext := filepath.Ext(info.FileName)
-						if ext != "" {
-							info.FileName = strings.TrimSuffix(info.FileName, ext) + ".mkv"
-						} else {
-							info.FileName = info.FileName + ".mkv"
+					if audioOnly {
+						args = append([]string{"-f", "bestaudio[ext=m4a]/bestaudio"}, args...)
+					} else {
+						args = append([]string{"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best", "--merge-output-format", "mkv"}, args...)
+						
+						if !strings.HasSuffix(strings.ToLower(info.FileName), ".mkv") {
+							ext := filepath.Ext(info.FileName)
+							if ext != "" {
+								info.FileName = strings.TrimSuffix(info.FileName, ext) + ".mkv"
+							} else {
+								info.FileName = info.FileName + ".mkv"
+							}
+							info.MimeType = "video/x-matroska"
 						}
-						info.MimeType = "video/x-matroska"
 					}
 				}
 

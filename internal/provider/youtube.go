@@ -34,7 +34,7 @@ func (yp *YouTubeProvider) Supports(url string) bool {
 func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Options) ([]VideoInfo, error) {
 	formatArg := "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best"
 	if opts.AudioOnly {
-		formatArg = "bestaudio"
+		formatArg = "bestaudio[ext=m4a]/bestaudio"
 	}
 
 	args := []string{
