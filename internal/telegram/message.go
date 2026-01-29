@@ -14,8 +14,5 @@ func FormatError(err error) string {
 }
 
 func FormatSuccess(filename string, size int64, duration time.Duration) string {
-	return fmt.Sprintf(" **Completed**\nFile: `%s`\nSize: %s\nTime: %v", filename, formatBytes(size), duration)
+	return fmt.Sprintf(" **Completed**\nFile: `%s`\nSize: %s\nTime: %v", filename, formatBytes(uint64(size)), duration)
 }
-
-
-
