@@ -11,12 +11,15 @@ import (
 )
 
 type ProgressTracker struct {
-	api       *tg.Client
-	peer      tg.InputPeerClass
-	msgID     int
-	lastTime  time.Time
-	mu        sync.Mutex
-	minPeriod time.Duration
+	api          *tg.Client
+	peer         tg.InputPeerClass
+	msgID        int
+	lastTime     time.Time
+	lastBytes    int64
+	startTime    time.Time
+	mu           sync.Mutex
+	minPeriod    time.Duration
+	title        string
 }
 
 func NewProgressTracker(api *tg.Client, peer tg.InputPeerClass, msgID int) *ProgressTracker {
@@ -24,8 +27,15 @@ func NewProgressTracker(api *tg.Client, peer tg.InputPeerClass, msgID int) *Prog
 		api:       api,
 		peer:      peer,
 		msgID:     msgID,
-		minPeriod: 2 * time.Second, 
+		minPeriod: 4 * time.Second,
+		startTime: time.Now(),
 	}
+}
+
+func (pt *ProgressTracker) SetTitle(title string) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	pt.title = title
 }
 
 func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
@@ -42,8 +52,55 @@ func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
 		percent = float64(uploadedBytes) / float64(totalBytes) * 100
 	}
 
-	text := fmt.Sprintf("⬇️ Downloading & Uploading...\nProgress: %.2f%% (%s / %s)", 
-		percent, formatBytes(uploadedBytes), formatBytes(totalBytes))
+	speed := int64(0)
+	if pt.lastBytes > 0 && !pt.lastTime.IsZero() {
+		elapsed := now.Sub(pt.lastTime).Seconds()
+		if elapsed > 0 {
+			speed = int64(float64(uploadedBytes-pt.lastBytes) / elapsed)
+		}
+	}
+	barWidth := 12
+	filled := int(percent / 100 * float64(barWidth))
+	if filled > barWidth {
+		filled = barWidth
+	}
+	
+	bar := ""
+	for i := 0; i < barWidth; i++ {
+		if i < filled {
+			bar += "■"
+		} else {
+			bar += "□"
+		}
+	}
+
+	elapsed := time.Since(pt.startTime)
+	
+	title := pt.title
+	if title == "" {
+		title = "Download"
+	}
+	if len(title) > 40 {
+		title = title[:37] + "..."
+	}
+
+	text := fmt.Sprintf(
+		"🎥 <b>%s</b>\n"+
+		"┌ Status : <code>Downloading... (%.1f%%)</code>\n"+
+		"├ [<code>%s</code>]\n"+
+		"├ Size : <code>%s</code>\n"+
+		"├ Processed : <code>%s</code>\n"+
+		"├ Speed : <code>%s/s</code>\n"+
+		"├ Time : <code>%s</code>\n"+
+		"└ Engine : <code>yt-dlp</code>",
+		title,
+		percent,
+		bar,
+		formatBytes(uint64(totalBytes)),
+		formatBytes(uint64(uploadedBytes)),
+		formatBytes(uint64(speed)),
+		formatDuration(elapsed),
+	)
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -60,17 +117,33 @@ func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
 	}()
 
 	pt.lastTime = now
+	pt.lastBytes = uploadedBytes
 }
 
-func formatBytes(b int64) string {
+func formatBytes(b uint64) string {
 	const unit = 1024
 	if b < unit {
 		return fmt.Sprintf("%d B", b)
 	}
 	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
+	val := int64(b)
+	for n := val / unit; n >= unit; n /= unit {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+	return fmt.Sprintf("%.2f %cB", float64(val)/float64(div), "KMGTPE"[exp])
+}
+
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	h := d / time.Hour
+	d -= h * time.Hour
+	m := d / time.Minute
+	d -= m * time.Minute
+	s := d / time.Second
+	
+	if h > 0 {
+		return fmt.Sprintf("%dh%dm%ds", h, m, s)
+	}
+	return fmt.Sprintf("%dm%ds", m, s)
 }
