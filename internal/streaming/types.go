@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"context"
+	"io"
 	"sync"
 )
 
@@ -41,6 +42,7 @@ type StreamInput struct {
 	Duration int
 	Width    int
 	Height   int
+	Reader   io.ReadCloser
 }
 
 // Pipeline components
