@@ -1,11 +1,12 @@
 package download
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"math/rand"
 	"os/exec"
-	"bytes"
-	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -67,7 +68,17 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 				}
 				
 				if info.UsePipe {
-					args = append([]string{"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best", "--merge-output-format", "mp4"}, args...)
+					args = append([]string{"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best", "--merge-output-format", "mkv"}, args...)
+					
+					if !strings.HasSuffix(strings.ToLower(info.FileName), ".mkv") {
+						ext := filepath.Ext(info.FileName)
+						if ext != "" {
+							info.FileName = strings.TrimSuffix(info.FileName, ext) + ".mkv"
+						} else {
+							info.FileName = info.FileName + ".mkv"
+						}
+						info.MimeType = "video/x-matroska"
+					}
 				}
 
 				if cookies := config.GetYtdlpCookies(); cookies != "" {
@@ -88,6 +99,9 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 					logger.Error("Failed to start yt-dlp pipe", "error", err, "stderr", stderr.String())
 					return
 				}
+				
+				// Log yt-dlp command for debugging
+				logger.Info("Started yt-dlp pipe", "file", info.FileName, "args", args[:3])
 				
 				input.Reader = &cmdReader{
 					ReadCloser: stdout,
@@ -163,12 +177,23 @@ func (c *cmdReader) Close() error {
 	err := c.ReadCloser.Close()
 	waitErr := c.cmd.Wait()
 
+	stderrStr := c.stderr.String()
 	if waitErr != nil {
+		stderrLen := len(stderrStr)
+		if stderrLen > 1000 {
+			stderrStr = "..." + stderrStr[stderrLen-1000:]
+		}
+		
 		logger.Error("Pipe process failed",
 			"error", waitErr,
-			"stderr", c.stderr.String(),
+			"stderr", stderrStr,
 		)
 		return waitErr
 	}
+	// Log successful completion with stderr summary
+	if len(stderrStr) > 0 {
+		logger.Debug("Pipe completed", "stderr_lines", len(stderrStr)/100)
+	}
+	
 	return err
 }
