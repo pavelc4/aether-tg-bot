@@ -35,6 +35,10 @@ func NewDownloadHandler(sm *streaming.Manager, cli *telegram.Client) *DownloadHa
 }
 
 func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Message, url string, audioOnly bool) error {
+	if !provider.IsSupported(url) {
+		return nil
+	}
+
 	logger.Info("DownloadHandler Handle called", "url", url, "audioOnly", audioOnly)
 	api := h.client.API()
 

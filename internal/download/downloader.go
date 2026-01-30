@@ -70,6 +70,15 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 				if info.UsePipe {
 					if audioOnly {
 						args = append([]string{"-f", "bestaudio[ext=m4a]/bestaudio"}, args...)
+						if !strings.HasSuffix(strings.ToLower(info.FileName), ".m4a") {
+							ext := filepath.Ext(info.FileName)
+							if ext != "" {
+								info.FileName = strings.TrimSuffix(info.FileName, ext) + ".m4a"
+							} else {
+								info.FileName = info.FileName + ".m4a"
+							}
+							info.MimeType = "audio/mp4"
+						}
 					} else {
 						args = append([]string{"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best", "--merge-output-format", "mkv"}, args...)
 						

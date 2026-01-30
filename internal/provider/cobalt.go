@@ -44,6 +44,7 @@ func (cp *CobaltProvider) Supports(url string) bool {
 		"tiktok.com", 
 		"vm.tiktok.com",
 		"vt.tiktok.com",
+		"threads.net",
 		"soundcloud.com",
 		"spotify.com",
 		"reddit.com", 
