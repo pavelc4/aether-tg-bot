@@ -209,35 +209,29 @@ func (cp *CobaltProvider) parseResponse(resp *cobaltAPIResponse) ([]VideoInfo, e
 	}
 }
 
+var mimeTypes = map[string]string{
+	".mp4":  "video/mp4",
+	".webm": "video/webm",
+	".mkv":  "video/x-matroska",
+	".mp3":  "audio/mpeg",
+	".m4a":  "audio/mp4",
+	".ogg":  "audio/ogg",
+	".wav":  "audio/wav",
+	".opus": "audio/opus",
+	".flac": "audio/flac",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".png":  "image/png",
+}
+
 func guessMimeType(filename string) string {
-	ext := filepath.Ext(filename)
+	ext := strings.ToLower(filepath.Ext(filename))
 	if idx := strings.Index(ext, "?"); idx != -1 {
 		ext = ext[:idx]
 	}
-	ext = strings.ToLower(ext)
-	switch ext {
-	case ".mp4":
-		return "video/mp4"
-	case ".webm":
-		return "video/webm"
-	case ".mkv":
-		return "video/x-matroska"
-	case ".mp3":
-		return "audio/mpeg"
-	case ".m4a":
-		return "audio/mp4"
-	case ".ogg":
-		return "audio/ogg"
-	case ".wav":
-		return "audio/wav"
-	case ".opus":
-		return "audio/opus"
-	case ".flac":
-		return "audio/flac"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
+
+	if mime, ok := mimeTypes[ext]; ok {
+		return mime
 	}
 	return "application/octet-stream"
 }
