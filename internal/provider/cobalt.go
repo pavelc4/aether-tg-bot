@@ -36,7 +36,39 @@ func (cp *CobaltProvider) Supports(url string) bool {
 	if strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") {
 		return false
 	}
-	return true
+	supportedDomains := []string{
+		"instagram.com", 
+		"instagr.am",
+		"twitter.com", 
+		"x.com",
+		"tiktok.com", 
+		"vm.tiktok.com",
+		"vt.tiktok.com",
+		"soundcloud.com",
+		"spotify.com",
+		"reddit.com", 
+		"redd.it",
+		"twitch.tv",
+		"facebook.com", 
+		"fb.watch",
+		"vimeo.com",
+		"pinterest.com", 
+		"pin.it",
+		"streamable.com",
+		"bilibili.com",
+		"dailymotion.com",
+		"dai.ly",
+		"vk.com",
+		"tumblr.com",
+	}
+
+	for _, d := range supportedDomains {
+		if strings.Contains(url, d) {
+			return true
+		}
+	}
+	
+	return false
 }
 
 func (cp *CobaltProvider) GetVideoInfo(ctx context.Context, url string, opts Options) ([]VideoInfo, error) {
@@ -48,7 +80,6 @@ func (cp *CobaltProvider) GetVideoInfo(ctx context.Context, url string, opts Opt
 	return cp.parseResponse(apiResp)
 }
 
-// Internal structures for Cobalt API
 type cobaltAPIResponse struct {
 	Status   string        `json:"status"`
 	URL      string        `json:"url"`
