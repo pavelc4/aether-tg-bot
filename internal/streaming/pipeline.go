@@ -68,7 +68,7 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 
 	numWorkers := 1
 	if state.TotalSize > 0 {
-		calculated := int(state.TotalSize / (3 * 1024 * 1024))
+		calculated := int(state.TotalSize / (1 * 1024 * 1024))
 		if calculated > p.config.MaxUploadWorkers {
 			numWorkers = p.config.MaxUploadWorkers
 		} else if calculated < p.config.MinUploadWorkers {

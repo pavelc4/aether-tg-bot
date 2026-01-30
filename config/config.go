@@ -38,7 +38,7 @@ const (
 	// Streaming Defaults
 	DefaultMaxConcurrentStreams = 8
 	DefaultChunkSize            = 512 * 1024 // 512KB
-	DefaultBufferSize           = 8
+	DefaultBufferSize           = 32
 	DefaultUploadWorkers        = 3
 	DefaultMinUploadWorkers     = 1
 	DefaultMaxUploadWorkers     = 8
