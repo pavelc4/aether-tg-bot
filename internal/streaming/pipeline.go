@@ -14,6 +14,7 @@ import (
 
 type Pipeline struct {
 	config Config
+	pool   *buffer.Pool
 	upload func(ctx context.Context, chunk Chunk, fileID int64) error
 	update func(read int64, total int64)
 }
@@ -21,6 +22,7 @@ type Pipeline struct {
 func NewPipeline(cfg Config, uploadFn func(context.Context, Chunk, int64) error, progressFn func(int64, int64)) *Pipeline {
 	return &Pipeline{
 		config: cfg,
+		pool:   buffer.NewPool(int(cfg.ChunkSize)),
 		upload: uploadFn,
 		update: progressFn,
 	}
@@ -125,7 +127,7 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 				if p.update != nil {
 					p.update(int64(chunk.Size), state.TotalSize)
 				}
-				buffer.Put(chunk.Data)
+				p.pool.Put(chunk.Data)
 			}
 		}(i)
 	}
@@ -143,10 +145,11 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 				return
 			}
 
-			buf := buffer.Get()
-			if int64(len(buf)) != p.config.ChunkSize {
+			buf := p.pool.Get()
+			if int64(cap(buf)) < p.config.ChunkSize {
 				buf = make([]byte, p.config.ChunkSize)
 			}
+			buf = buf[:p.config.ChunkSize]
 			
 			n, readErr := io.ReadFull(body, buf)
 			if n > 0 {
