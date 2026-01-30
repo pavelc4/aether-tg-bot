@@ -127,8 +127,11 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Op
 
 func isNonStreamableURL(url string) bool {
 	lower := strings.ToLower(url)
-	if strings.Contains(lower, ".jpg") || strings.Contains(lower, ".jpeg") || strings.Contains(lower, ".png") || strings.Contains(lower, ".webp") {
-		return true
+	imgExts := []string{".jpg", ".jpeg", ".png", ".webp"}
+	for _, ext := range imgExts {
+		if strings.Contains(lower, ext) {
+			return true
+		}
 	}
 	return false
 }

@@ -123,11 +123,17 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 				}
 			}
 
-			isPhoto := strings.HasPrefix(input.MIME, "image/") ||
-				strings.HasSuffix(strings.ToLower(input.Filename), ".jpg") ||
-				strings.HasSuffix(strings.ToLower(input.Filename), ".jpeg") ||
-				strings.HasSuffix(strings.ToLower(input.Filename), ".png") ||
-				strings.HasSuffix(strings.ToLower(input.Filename), ".webp")
+			isPhoto := strings.HasPrefix(input.MIME, "image/")
+			if !isPhoto {
+				name := strings.ToLower(input.Filename)
+				imgExts := []string{".jpg", ".jpeg", ".png", ".webp"}
+				for _, ext := range imgExts {
+					if strings.HasSuffix(name, ext) {
+						isPhoto = true
+						break
+					}
+				}
+			}
 
 			// Use random ID for fileID to avoid collisions
 			fileID := rand.Int63()
