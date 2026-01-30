@@ -11,6 +11,7 @@ import (
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
+	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
@@ -143,7 +144,17 @@ func GetSystemInfo() (*SystemInfo, error) {
 	if cpuPercent, err := cpu.Percent(time.Second, false); err == nil && len(cpuPercent) > 0 {
 		info.CPUUsage = cpuPercent[0]
 	}
-	info.CPUCores = runtime.NumCPU()
+	if cores, err := cpu.Counts(false); err == nil {
+		info.CPUCores = cores
+	} else {
+		info.CPUCores = runtime.NumCPU()
+	}
+
+	if avg, err := load.Avg(); err == nil {
+		info.Load1 = avg.Load1
+		info.Load5 = avg.Load5
+		info.Load15 = avg.Load15
+	}
 
 	if memInfo, err := mem.VirtualMemory(); err == nil {
 		info.MemUsed = memInfo.Used
@@ -182,6 +193,9 @@ func GetSystemInfo() (*SystemInfo, error) {
 	info.GoVersion = runtime.Version()
 	info.Goroutines = runtime.NumGoroutine()
 	info.HeapAlloc = m.Alloc
+	info.StackInUse = m.StackInuse
+	info.NextGC = m.NextGC
+	info.PauseTotal = m.PauseTotalNs
 	info.GCRuns = m.NumGC
 
 	return info, nil

@@ -58,7 +58,7 @@ func New() (*App, error) {
 	}
 
 	dlHandler := handler.NewDownloadHandler(streamMgr, client)
-	adminHandler := handler.NewAdminHandler(client)
+	adminHandler := handler.NewAdminHandler(client, streamMgr)
 	basicHandler := handler.NewBasicHandler(client)
 	
 	router := bot.NewRouter(dlHandler, adminHandler, basicHandler)

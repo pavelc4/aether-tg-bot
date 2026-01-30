@@ -12,6 +12,9 @@ type SystemInfo struct {
 
 	CPUCores int
 	CPUUsage float64
+	Load1    float64
+	Load5    float64
+	Load15   float64
 
 	MemUsed      uint64
 	MemTotal     uint64
@@ -34,6 +37,9 @@ type SystemInfo struct {
 	GoVersion  string
 	Goroutines int
 	HeapAlloc  uint64
+	StackInUse uint64
+	NextGC     uint64
+	PauseTotal uint64
 	GCRuns     uint32
 }
 
