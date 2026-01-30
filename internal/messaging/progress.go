@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/pavelc4/aether-tg-bot/internal/provider"
+	"github.com/pavelc4/aether-tg-bot/internal/utils"
 )
 
 func FormatInitialProgress(infos []provider.VideoInfo) string {
@@ -36,19 +37,5 @@ func formatTotalSize(infos []provider.VideoInfo) string {
 	for _, info := range infos {
 		total += uint64(info.FileSize)
 	}
-	return formatBytes(total)
-}
-
-func formatBytes(b uint64) string {
-	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(unit), 0
-	val := int64(b)
-	for n := val / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.2f %cB", float64(val)/float64(div), "KMGTPE"[exp])
+	return utils.FormatBytes(total)
 }

@@ -3,6 +3,7 @@ package telegram
 import (
 	"fmt"
 	"time"
+	"github.com/pavelc4/aether-tg-bot/internal/utils"
 )
 
 func FormatStart() string {
@@ -14,5 +15,5 @@ func FormatError(err error) string {
 }
 
 func FormatSuccess(filename string, size int64, duration time.Duration) string {
-	return fmt.Sprintf(" **Completed**\nFile: `%s`\nSize: %s\nTime: %v", filename, formatBytes(uint64(size)), duration)
+	return fmt.Sprintf(" **Completed**\nFile: `%s`\nSize: %s\nTime: %v", filename, utils.FormatBytes(uint64(size)), duration)
 }
