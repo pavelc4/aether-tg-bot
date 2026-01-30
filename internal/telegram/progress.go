@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gotd/td/tg"
+	"github.com/pavelc4/aether-tg-bot/internal/utils"
 )
 
 type ProgressTracker struct {
@@ -59,20 +60,15 @@ func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
 			speed = int64(float64(uploadedBytes-pt.lastBytes) / elapsed)
 		}
 	}
-	barWidth := 12
-	filled := int(percent / 100 * float64(barWidth))
-	if filled > barWidth {
-		filled = barWidth
-	}
+
+	const fullBar = "■■■■■■■■■■■■"  
+	const emptyBar = "□□□□□□□□□□□□" 
 	
-	bar := ""
-	for i := 0; i < barWidth; i++ {
-		if i < filled {
-			bar += "■"
-		} else {
-			bar += "□"
-		}
+	filled := int(percent / 100 * 12)
+	if filled > 12 {
+		filled = 12
 	}
+	bar := fullBar[:filled] + emptyBar[filled:]
 
 	elapsed := time.Since(pt.startTime)
 	
@@ -96,10 +92,10 @@ func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
 		title,
 		percent,
 		bar,
-		formatBytes(uint64(totalBytes)),
-		formatBytes(uint64(uploadedBytes)),
-		formatBytes(uint64(speed)),
-		formatDuration(elapsed),
+		utils.FormatBytes(uint64(totalBytes)),
+		utils.FormatBytes(uint64(uploadedBytes)),
+		utils.FormatBytes(uint64(speed)),
+		utils.FormatDuration(elapsed),
 	)
 
 	go func() {
@@ -118,32 +114,4 @@ func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
 
 	pt.lastTime = now
 	pt.lastBytes = uploadedBytes
-}
-
-func formatBytes(b uint64) string {
-	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(unit), 0
-	val := int64(b)
-	for n := val / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.2f %cB", float64(val)/float64(div), "KMGTPE"[exp])
-}
-
-func formatDuration(d time.Duration) string {
-	d = d.Round(time.Second)
-	h := d / time.Hour
-	d -= h * time.Hour
-	m := d / time.Minute
-	d -= m * time.Minute
-	s := d / time.Second
-	
-	if h > 0 {
-		return fmt.Sprintf("%dh%dm%ds", h, m, s)
-	}
-	return fmt.Sprintf("%dm%ds", m, s)
 }
