@@ -48,31 +48,9 @@ type BotStats struct {
 	StartTime time.Time
 
 	Downloads        int64
-	TotalFiles       int64
-	TotalBytes       int64
-	SuccessDownloads int64
-	FailedDownloads  int64
-	AudioDownloads   int64
-	VideoDownloads   int64
-	ImageDownloads   int64
-
-	UniqueUsers map[int64]bool
-
-	PlatformStats map[string]int64
-
-	DailyStats   map[string]*PeriodStats // YYYY-MM-DD
-	WeeklyStats  map[string]*PeriodStats // YYYY-Www
-	MonthlyStats map[string]*PeriodStats // YYYY-MM
-
+	UniqueUsers      map[int64]bool
 	LastDownloadTime time.Time
 
 	NetSentBaseline uint64
 	NetRecvBaseline uint64
-}
-
-type PeriodStats struct {
-	Downloads int64
-	Files     int64
-	Bytes     int64
-	Users     map[int64]bool
 }

@@ -1,8 +1,6 @@
 package stats
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"runtime"
 	"sync"
@@ -22,28 +20,12 @@ var (
 	once        sync.Once
 )
 
-func InitStats() {
-	GetStats()
-}
-
 func GetStats() *BotStats {
 	once.Do(func() {
 		globalStats = &BotStats{
-			StartTime:     time.Now(),
-			UniqueUsers:   make(map[int64]bool),
-			PlatformStats: make(map[string]int64),
-			DailyStats:    make(map[string]*PeriodStats),
-			WeeklyStats:   make(map[string]*PeriodStats),
-			MonthlyStats:  make(map[string]*PeriodStats),
+			StartTime:   time.Now(),
+			UniqueUsers: make(map[int64]bool),
 		}
-
-		if err := globalStats.LoadFromFile(); err != nil {
-			fmt.Printf("Failed to load stats: %v\n", err)
-		} else {
-			fmt.Printf("Stats loaded: %d downloads\n", globalStats.Downloads)
-		}
-
-		globalStats.StartAutoSave(5 * time.Minute)
 
 		if netStats, err := net.IOCounters(false); err == nil && len(netStats) > 0 {
 			globalStats.NetSentBaseline = netStats[0].BytesSent
@@ -70,66 +52,6 @@ func TrackDownload() {
 
 func GetUptime() string {
 	return time.Since(GetStats().StartTime).Round(time.Second).String()
-}
-
-func (s *BotStats) RecordDownload(userID int64, platform, mediaType string, files int, bytes int64, success bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	now := time.Now()
-
-	s.Downloads++
-	s.TotalFiles += int64(files)
-	s.TotalBytes += bytes
-	s.LastDownloadTime = now
-
-	if success {
-		s.SuccessDownloads++
-	} else {
-		s.FailedDownloads++
-	}
-
-	incrementers := map[string]func(){
-		"Audio": func() { s.AudioDownloads++ },
-		"Video": func() { s.VideoDownloads++ },
-		"Image": func() { s.ImageDownloads++ },
-	}
-
-	if inc, ok := incrementers[mediaType]; ok {
-		inc()
-	}
-
-	s.UniqueUsers[userID] = true
-
-	if platform != "" && platform != "Unknown" {
-		s.PlatformStats[platform]++
-	}
-
-	dayKey := now.Format("2006-01-02")
-	weekKey := now.Format("2006-W") + getWeekNumber(now)
-	monthKey := now.Format("2006-01")
-
-	s.recordPeriodStats(s.DailyStats, dayKey, userID, files, bytes)
-	s.recordPeriodStats(s.WeeklyStats, weekKey, userID, files, bytes)
-	s.recordPeriodStats(s.MonthlyStats, monthKey, userID, files, bytes)
-}
-
-func (s *BotStats) recordPeriodStats(stats map[string]*PeriodStats, key string, userID int64, files int, bytes int64) {
-	if stats[key] == nil {
-		stats[key] = &PeriodStats{
-			Users: make(map[int64]bool),
-		}
-	}
-
-	stats[key].Downloads++
-	stats[key].Files += int64(files)
-	stats[key].Bytes += bytes
-	stats[key].Users[userID] = true
-}
-
-func getWeekNumber(t time.Time) string {
-	_, week := t.ISOWeek()
-	return fmt.Sprintf("%02d", week)
 }
 
 func GetSystemInfo() (*SystemInfo, error) {
@@ -199,67 +121,4 @@ func GetSystemInfo() (*SystemInfo, error) {
 	info.GCRuns = m.NumGC
 
 	return info, nil
-}
-
-func (s *BotStats) GetPeriodStats(period string) *PeriodStats {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	now := time.Now()
-
-	strategies := map[string]func() *PeriodStats{
-		"today": func() *PeriodStats { return s.DailyStats[now.Format("2006-01-02")] },
-		"week":  func() *PeriodStats { return s.WeeklyStats[now.Format("2006-W")+getWeekNumber(now)] },
-		"month": func() *PeriodStats { return s.MonthlyStats[now.Format("2006-01")] },
-	}
-
-	if strategy, exists := strategies[period]; exists {
-		return strategy()
-	}
-
-	return nil
-}
-
-const statsFilePath = "/app/data/stats.json"
-
-func (s *BotStats) SaveToFile() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if err := os.MkdirAll("/app/data", 0755); err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(statsFilePath, data, 0644)
-}
-
-func (s *BotStats) LoadFromFile() error {
-	data, err := os.ReadFile(statsFilePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return json.Unmarshal(data, s)
-}
-
-func (s *BotStats) StartAutoSave(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	go func() {
-		for range ticker.C {
-			if err := s.SaveToFile(); err != nil {
-				fmt.Printf("Failed to save stats: %v\n", err)
-			}
-		}
-	}()
 }

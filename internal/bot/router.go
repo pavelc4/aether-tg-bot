@@ -50,8 +50,6 @@ func (r *Router) OnChannelMessage(ctx context.Context, e tg.Entities, update *tg
 }
 
 func (r *Router) HandleMessage(ctx context.Context, e tg.Entities, msg *tg.Message) error {
-	logger.Info("HandleMessage called", "id", msg.ID, "text", msg.Message, "out", msg.Out)
-	
 	if msg.Out {
 		return nil
 	}
