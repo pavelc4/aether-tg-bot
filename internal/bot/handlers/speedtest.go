@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gotd/td/tg"
-	"github.com/pavelc4/aether-tg-bot/pkg/utils"
 )
 
 func (h *Handler) handleSpeedtest(ctx context.Context, msg *tg.Message, entities tg.Entities) error {
