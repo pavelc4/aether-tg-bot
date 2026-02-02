@@ -11,16 +11,18 @@ import (
 )
 
 type Router struct {
-	download *handler.DownloadHandler
-	admin    *handler.AdminHandler
-	basic    *handler.BasicHandler
+	download  *handler.DownloadHandler
+	admin     *handler.AdminHandler
+	basic     *handler.BasicHandler
+	speedtest *handler.SpeedtestHandler
 }
 
-func NewRouter(dl *handler.DownloadHandler, adm *handler.AdminHandler, basic *handler.BasicHandler) *Router {
+func NewRouter(dl *handler.DownloadHandler, adm *handler.AdminHandler, basic *handler.BasicHandler, speed *handler.SpeedtestHandler) *Router {
 	return &Router{
-		download: dl,
-		admin:    adm,
-		basic:    basic,
+		download:  dl,
+		admin:     adm,
+		basic:     basic,
+		speedtest: speed,
 	}
 }
 
@@ -75,7 +77,7 @@ func (r *Router) HandleMessage(ctx context.Context, e tg.Entities, msg *tg.Messa
 		return r.admin.HandleStats(ctx, e, msg)
 	}
 	if strings.HasPrefix(text, "/speedtest") || strings.HasPrefix(text, "/speed") {
-		return r.basic.HandleSpeedtest(ctx, e, msg)
+		return r.speedtest.Handle(ctx, e, msg)
 	}
 
 	if strings.HasPrefix(text, "/dl") || strings.HasPrefix(text, "/video") {

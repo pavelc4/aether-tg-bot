@@ -60,8 +60,9 @@ func New() (*App, error) {
 	dlHandler := handler.NewDownloadHandler(streamMgr, client)
 	adminHandler := handler.NewAdminHandler(client, streamMgr)
 	basicHandler := handler.NewBasicHandler(client)
-	
-	router := bot.NewRouter(dlHandler, adminHandler, basicHandler)
+	speedtestHandler := handler.NewSpeedtestHandler(client)
+
+	router := bot.NewRouter(dlHandler, adminHandler, basicHandler, speedtestHandler)
 	
 	dispatcher.OnNewMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewMessage) error {
 		handler := func() {
