@@ -1,12 +1,7 @@
-name: Build Binary
+name: Release Binary
 
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Version tag (optional)"
-        required: false
-        default: "manual-build"
 
 permissions:
   contents: read
@@ -68,7 +63,8 @@ jobs:
           fi
 
           echo "Building for $GOOS/$GOARCH $GOAMD64..."
-          go build -ldflags="-w -s -X main.version=${{ github.event.inputs.tag || 'dev' }}" \
+          # Hardcoded version: stable
+          go build -ldflags="-w -s -X main.version=stable" \
             -trimpath \
             -o aether-bot-${{ matrix.goos }}-${{ matrix.goarch }}$SUFFIX$EXT ./cmd/bot
 
@@ -78,4 +74,4 @@ jobs:
           name: aether-bot-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goamd64 && format('-{0}', matrix.goamd64) || '' }}
           path: aether-bot-*
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 90

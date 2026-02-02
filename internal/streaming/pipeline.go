@@ -14,6 +14,7 @@ import (
 
 type Pipeline struct {
 	config Config
+	pool   *buffer.Pool
 	upload func(ctx context.Context, chunk Chunk, fileID int64) error
 	update func(read int64, total int64)
 }
@@ -21,15 +22,25 @@ type Pipeline struct {
 func NewPipeline(cfg Config, uploadFn func(context.Context, Chunk, int64) error, progressFn func(int64, int64)) *Pipeline {
 	return &Pipeline{
 		config: cfg,
+		pool:   buffer.NewPool(int(cfg.ChunkSize)),
 		upload: uploadFn,
 		update: progressFn,
 	}
 }
 
 func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamState) (int, string, error) {
-	body, size, _, err := pkghttp.StreamRequest(ctx, input.URL, input.Headers)
-	if err != nil {
-		return 0, "", fmt.Errorf("stream open failed: %w", err)
+	var body io.ReadCloser
+	var size int64
+	var err error
+
+	if input.Reader != nil {
+		body = input.Reader
+		size = input.Size
+	} else {
+		body, size, _, err = pkghttp.StreamRequest(ctx, input.URL, input.Headers)
+		if err != nil {
+			return 0, "", fmt.Errorf("stream open failed: %w", err)
+		}
 	}
 	defer body.Close()
 
@@ -59,7 +70,7 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 
 	numWorkers := 1
 	if state.TotalSize > 0 {
-		calculated := int(state.TotalSize / (3 * 1024 * 1024))
+		calculated := int(state.TotalSize / (1 * 1024 * 1024))
 		if calculated > p.config.MaxUploadWorkers {
 			numWorkers = p.config.MaxUploadWorkers
 		} else if calculated < p.config.MinUploadWorkers {
@@ -116,7 +127,7 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 				if p.update != nil {
 					p.update(int64(chunk.Size), state.TotalSize)
 				}
-				buffer.Put(chunk.Data)
+				p.pool.Put(chunk.Data)
 			}
 		}(i)
 	}
@@ -134,10 +145,11 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 				return
 			}
 
-			buf := buffer.Get()
-			if int64(len(buf)) != p.config.ChunkSize {
+			buf := p.pool.Get()
+			if int64(cap(buf)) < p.config.ChunkSize {
 				buf = make([]byte, p.config.ChunkSize)
 			}
+			buf = buf[:p.config.ChunkSize]
 			
 			n, readErr := io.ReadFull(body, buf)
 			if n > 0 {

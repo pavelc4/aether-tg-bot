@@ -36,7 +36,40 @@ func (cp *CobaltProvider) Supports(url string) bool {
 	if strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") {
 		return false
 	}
-	return true
+	supportedDomains := []string{
+		"instagram.com", 
+		"instagr.am",
+		"twitter.com", 
+		"x.com",
+		"tiktok.com", 
+		"vm.tiktok.com",
+		"vt.tiktok.com",
+		"threads.net",
+		"soundcloud.com",
+		"spotify.com",
+		"reddit.com", 
+		"redd.it",
+		"twitch.tv",
+		"facebook.com", 
+		"fb.watch",
+		"vimeo.com",
+		"pinterest.com", 
+		"pin.it",
+		"streamable.com",
+		"bilibili.com",
+		"dailymotion.com",
+		"dai.ly",
+		"vk.com",
+		"tumblr.com",
+	}
+
+	for _, d := range supportedDomains {
+		if strings.Contains(url, d) {
+			return true
+		}
+	}
+	
+	return false
 }
 
 func (cp *CobaltProvider) GetVideoInfo(ctx context.Context, url string, opts Options) ([]VideoInfo, error) {
@@ -48,7 +81,6 @@ func (cp *CobaltProvider) GetVideoInfo(ctx context.Context, url string, opts Opt
 	return cp.parseResponse(apiResp)
 }
 
-// Internal structures for Cobalt API
 type cobaltAPIResponse struct {
 	Status   string        `json:"status"`
 	URL      string        `json:"url"`
@@ -177,35 +209,29 @@ func (cp *CobaltProvider) parseResponse(resp *cobaltAPIResponse) ([]VideoInfo, e
 	}
 }
 
+var mimeTypes = map[string]string{
+	".mp4":  "video/mp4",
+	".webm": "video/webm",
+	".mkv":  "video/x-matroska",
+	".mp3":  "audio/mpeg",
+	".m4a":  "audio/mp4",
+	".ogg":  "audio/ogg",
+	".wav":  "audio/wav",
+	".opus": "audio/opus",
+	".flac": "audio/flac",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".png":  "image/png",
+}
+
 func guessMimeType(filename string) string {
-	ext := filepath.Ext(filename)
+	ext := strings.ToLower(filepath.Ext(filename))
 	if idx := strings.Index(ext, "?"); idx != -1 {
 		ext = ext[:idx]
 	}
-	ext = strings.ToLower(ext)
-	switch ext {
-	case ".mp4":
-		return "video/mp4"
-	case ".webm":
-		return "video/webm"
-	case ".mkv":
-		return "video/x-matroska"
-	case ".mp3":
-		return "audio/mpeg"
-	case ".m4a":
-		return "audio/mp4"
-	case ".ogg":
-		return "audio/ogg"
-	case ".wav":
-		return "audio/wav"
-	case ".opus":
-		return "audio/opus"
-	case ".flac":
-		return "audio/flac"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
+
+	if mime, ok := mimeTypes[ext]; ok {
+		return mime
 	}
 	return "application/octet-stream"
 }

@@ -41,3 +41,7 @@ func (rm *ResourceManager) TryAcquire() bool {
 		return false
 	}
 }
+
+func (rm *ResourceManager) GetActiveCount() int {
+	return len(rm.sem)
+}

@@ -8,8 +8,8 @@
     <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&colorA=363A4F&logo=docker&logoColor=D9E0EE">
     <img src="https://img.shields.io/badge/MTProto-229ED9?style=for-the-badge&colorA=363A4F&logo=telegram&logoColor=D9E0EE">
 </p>
----
 
+---
 ## About
 
 **Aether** is a high-performance Telegram bot that streams media from multiple sources directly to Telegram without intermediate disk storage.

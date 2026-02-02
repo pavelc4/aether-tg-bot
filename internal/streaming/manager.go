@@ -25,6 +25,10 @@ func NewManager(cfg Config) *Manager {
 	}
 }
 
+func (m *Manager) GetActiveStreams() int {
+	return m.resource.GetActiveCount()
+}
+
 func (m *Manager) Stream(ctx context.Context, input StreamInput, uploadFn func(context.Context, Chunk, int64) error, progressFn func(int64, int64)) (int, string, error) {
 	// 1. Acquire Resource
 	if err := m.resource.Acquire(ctx); err != nil {

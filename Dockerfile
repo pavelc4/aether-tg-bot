@@ -22,9 +22,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	ffmpeg \
 	tzdata \
 	curl \
+	unzip \
 	procps && \
 	apt-get clean && \
 	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache
+
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
 
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
 	-o /usr/local/bin/yt-dlp && chmod +x /usr/local/bin/yt-dlp

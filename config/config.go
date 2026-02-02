@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -36,7 +38,7 @@ const (
 	// Streaming Defaults
 	DefaultMaxConcurrentStreams = 8
 	DefaultChunkSize            = 512 * 1024 // 512KB
-	DefaultBufferSize           = 8
+	DefaultBufferSize           = 32
 	DefaultUploadWorkers        = 3
 	DefaultMinUploadWorkers     = 1
 	DefaultMaxUploadWorkers     = 8
@@ -73,6 +75,7 @@ type Config struct {
 var currentConfig *Config
 
 func init() {
+	_ = godotenv.Load()
 	LoadConfig()
 }
 

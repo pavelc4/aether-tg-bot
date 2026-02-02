@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -33,7 +32,7 @@ func (yp *YouTubeProvider) Supports(url string) bool {
 }
 
 func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Options) ([]VideoInfo, error) {
-	formatArg := "best[ext=mp4][protocol^=http]/best[protocol^=http]"
+	formatArg := "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best"
 	if opts.AudioOnly {
 		formatArg = "bestaudio[ext=m4a]/bestaudio"
 	}
@@ -42,6 +41,10 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Op
 		"--dump-json",
 		"--no-playlist",
 		"--no-warnings",
+		"--rm-cache-dir",
+		"--js-runtimes", "bun",
+		"--retries", "10",
+		"--fragment-retries", "10",
 		"-f", formatArg,
 		url,
 	}
@@ -72,43 +75,24 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Op
 		return nil, fmt.Errorf("decode json failed: %w", err)
 	}
 
-	finalURL := meta.URL
-	if (finalURL == "" || isNonStreamableURL(finalURL)) && len(meta.Formats) > 0 {
-		// Find a valid video URL in formats
-		for _, f := range meta.Formats {
-			if f.URL != "" && f.VCodec != "none" && !isNonStreamableURL(f.URL) {
-				finalURL = f.URL
-				break
-			}
-		}
-	}
-
-	if finalURL == "" || isNonStreamableURL(finalURL) {
-		logger.Error("yt-dlp returned no streamable video URL", "url", finalURL, "stderr", stderr.String())
-		return nil, fmt.Errorf("no streamable video URL found")
-	}
-
+	usePipe := true
+	finalURL := url 
+	
 	filename := fmt.Sprintf("%s.%s", meta.Title, meta.Ext)
 	filename = strings.ReplaceAll(filename, "/", "_")
+	if !opts.AudioOnly && meta.Ext != "mp4" {
+		filename = strings.Replace(filename, "."+meta.Ext, ".mp4", 1)
+		meta.Ext = "mp4"
+	}
 
 	size := meta.FileSize
 	if size == 0 {
 		size = meta.FileSizeApp
 	}
 
-	if size == 0 && finalURL != "" {
-		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		
-		req, _ := http.NewRequestWithContext(ctx, "HEAD", finalURL, nil)
-		for k, v := range meta.HttpHeaders {
-			req.Header.Set(k, v)
-		}
-		
-		if resp, err := http.DefaultClient.Do(req); err == nil {
-			size = resp.ContentLength
-			resp.Body.Close()
-		}
+	if size == 0 && meta.TBR > 0 && meta.Duration > 0 {
+		logger.Info("Estimating size from bitrate", "tbr", meta.TBR, "duration", meta.Duration)
+		size = int64((meta.TBR * 1000 * meta.Duration) / 8)
 	}
 
 	logger.Info("YouTube info resolved", 
@@ -116,8 +100,10 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Op
 		"size", size,
 		"res", fmt.Sprintf("%dx%d", meta.Width, meta.Height),
 		"dur", meta.Duration,
+		"pipe", usePipe,
 	)
-	mime := "video/" + meta.Ext
+	
+	mime := "video/mp4"
 	if opts.AudioOnly || meta.Ext == "m4a" || meta.Ext == "mp3" {
 		mime = "audio/" + meta.Ext
 		if meta.Ext == "m4a" {
@@ -135,16 +121,17 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Op
 		Width:    meta.Width,
 		Height:   meta.Height,
 		Headers:  meta.HttpHeaders,
+		UsePipe:  usePipe,
 	}}, nil
 }
 
 func isNonStreamableURL(url string) bool {
 	lower := strings.ToLower(url)
-	if strings.Contains(lower, ".jpg") || strings.Contains(lower, ".jpeg") || strings.Contains(lower, ".png") || strings.Contains(lower, ".webp") {
-		return true
-	}
-	if strings.Contains(lower, ".m3u8") || strings.Contains(lower, ".mpd") || strings.Contains(lower, "manifest") {
-		return true
+	imgExts := []string{".jpg", ".jpeg", ".png", ".webp"}
+	for _, ext := range imgExts {
+		if strings.Contains(lower, ext) {
+			return true
+		}
 	}
 	return false
 }
@@ -159,11 +146,15 @@ type ytdlpMeta struct {
 	Duration    float64           `json:"duration"`
 	FileSize    int64             `json:"filesize,omitempty"`
 	FileSizeApp int64             `json:"filesize_approx,omitempty"`
+	TBR         float64           `json:"tbr,omitempty"` 
 	HttpHeaders map[string]string `json:"http_headers"`
 	Formats     []ytdlpFormat     `json:"formats"`
 }
 
 type ytdlpFormat struct {
+	ID     string `json:"format_id"`
 	URL    string `json:"url"`
+	Ext    string `json:"ext"`
+	ACodec string `json:"acodec"`
 	VCodec string `json:"vcodec"`
 }

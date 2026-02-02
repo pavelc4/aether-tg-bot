@@ -10,15 +10,18 @@ import (
 	"github.com/gotd/td/tg"
 	"github.com/pavelc4/aether-tg-bot/config"
 	"github.com/pavelc4/aether-tg-bot/internal/stats"
+	"github.com/pavelc4/aether-tg-bot/internal/streaming"
 	"github.com/pavelc4/aether-tg-bot/internal/telegram"
+	"github.com/pavelc4/aether-tg-bot/internal/utils"
 )
 
 type AdminHandler struct {
-	client *telegram.Client
+	client    *telegram.Client
+	streamMgr *streaming.Manager
 }
 
-func NewAdminHandler(cli *telegram.Client) *AdminHandler {
-	return &AdminHandler{client: cli}
+func NewAdminHandler(cli *telegram.Client, sm *streaming.Manager) *AdminHandler {
+	return &AdminHandler{client: cli, streamMgr: sm}
 }
 
 func (h *AdminHandler) HandleStats(ctx context.Context, e tg.Entities, msg *tg.Message) error {
@@ -36,40 +39,56 @@ func (h *AdminHandler) HandleStats(ctx context.Context, e tg.Entities, msg *tg.M
 	}
 
 	text := fmt.Sprintf(
-		"<b>CPU</b>\n"+
-			"├─ Cores: <code>%d</code>\n"+
-			"└─ Usage: <code>%.2f%%</code>\n"+
-			"└─ Uptime: <code>%v</code>\n\n"+
+		"<b>System Status</b>\n\n"+
+			"<b>OS Info</b>\n"+
+			"├ System : <code>%s</code>\n"+
+			"├ Host : <code>%s</code>\n"+
+			"└ Uptime : <code>%s</code>\n\n"+
+			"<b>CPU</b>\n"+
+			"├ Cores : <code>%d</code>\n"+
+			"├ Usage : <code>%.2f%%</code>\n"+
+			"└ Load : <code>%.2f %.2f %.2f</code>\n\n"+
 			"<b>Memory</b>\n"+
-			"├─ Used: <code>%s / %s (%.1f%%)</code>\n"+
-			"└─ Available: <code>%s</code>\n\n"+
+			"├ Used : <code>%s / %s (%.1f%%)</code>\n"+
+			"└ Free : <code>%s</code>\n\n"+
 			"<b>Network</b>\n"+
-			"├─ Sent: <code>%s</code>\n"+
-			"└─ Received: <code>%s</code>\n\n"+
+			"├ Sent : <code>%s</code>\n"+
+			"└ Recv : <code>%s</code>\n\n"+
 			"<b>Bot Process</b>\n"+
-			"├─ Uptime: <code>%v</code>\n"+
-			"├─ PID: <code>%d</code>\n"+
-			"├─ CPU: <code>%.2f%%</code>\n"+
-			"├─ Memory: <code>%s</code>\n"+
-			"└─ Go Version: <code>%s</code>\n\n"+
-			"<b>Go Runtime</b>\n"+
-			"├─ Goroutines: <code>%d</code>\n"+
-			"├─ Heap Alloc: <code>%s</code>\n"+
-			"└─ GC Runs: <code>%d</code>",
+			"├ Uptime : <code>%s</code>\n"+
+			"├ PID : <code>%d</code>\n"+
+			"├ CPU : <code>%.2f%%</code>\n"+
+			"├ Mem : <code>%s</code>\n"+
+			"├ Pipes : <code>%d</code>\n"+
+			"└ Go Ver : <code>%s</code>\n\n"+
+			"<b>Go Process</b>\n"+
+			"├ Routines : <code>%d</code>\n"+
+			"├ Heap : <code>%s</code>\n"+
+			"├ Stack : <code>%s</code>\n"+
+			"├ Next GC : <code>%s</code>\n"+
+			"├ GC Pause : <code>%s</code>\n"+
+			"└ GC Runs : <code>%d</code>",
+		sysInfo.OS,
+		sysInfo.Hostname,
+		sysInfo.SystemUptime.Round(time.Second),
 		sysInfo.CPUCores,
 		sysInfo.CPUUsage,
-		sysInfo.SystemUptime.Round(time.Second),
-		formatBytes(sysInfo.MemUsed), formatBytes(sysInfo.MemTotal), sysInfo.MemPercent,
-		formatBytes(sysInfo.MemAvailable),
-		formatBytes(sysInfo.NetSent),
-		formatBytes(sysInfo.NetRecv),
+		sysInfo.Load1, sysInfo.Load5, sysInfo.Load15,
+		utils.FormatBytes(sysInfo.MemUsed), utils.FormatBytes(sysInfo.MemTotal), sysInfo.MemPercent,
+		utils.FormatBytes(sysInfo.MemAvailable),
+		utils.FormatBytes(sysInfo.NetSent),
+		utils.FormatBytes(sysInfo.NetRecv),
 		sysInfo.ProcessUptime.Round(time.Second),
 		sysInfo.ProcessPID,
 		sysInfo.ProcessCPU,
-		formatBytes(sysInfo.ProcessMem),
+		utils.FormatBytes(sysInfo.ProcessMem),
+		h.streamMgr.GetActiveStreams(),
 		sysInfo.GoVersion,
 		sysInfo.Goroutines,
-		formatBytes(sysInfo.HeapAlloc),
+		utils.FormatBytes(sysInfo.HeapAlloc),
+		utils.FormatBytes(sysInfo.StackInUse),
+		utils.FormatBytes(sysInfo.NextGC),
+		time.Duration(sysInfo.PauseTotal),
 		sysInfo.GCRuns,
 	)
 
@@ -82,19 +101,7 @@ func (h *AdminHandler) HandleStats(ctx context.Context, e tg.Entities, msg *tg.M
 	return err
 }
 
-func formatBytes(b uint64) string {
-	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(unit), 0
-	val := int64(b)
-	for n := val / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.2f %cB", float64(val)/float64(div), "KMGTPE"[exp])
-}
+
 
 func getSenderID(msg *tg.Message) int64 {
 	if from, ok := msg.GetFromID(); ok {
