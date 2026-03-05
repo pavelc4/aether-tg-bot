@@ -57,12 +57,33 @@ func (r *Router) HandleMessage(ctx context.Context, e tg.Entities, msg *tg.Messa
 	}
 
 	text := msg.Message
+	isGroup := false
+	switch msg.PeerID.(type) {
+	case *tg.PeerChat, *tg.PeerChannel:
+		isGroup = true
+	}
+
+	knownCommands := map[string]bool{
+		"/start":     true,
+		"/help":      true,
+		"/stats":     true,
+		"/speedtest": true,
+		"/speed":     true,
+		"/dl":        true,
+		"/video":     true,
+		"/mp":        true,
+	}
+
 	if strings.HasPrefix(text, "/") {
 		parts := strings.Fields(text)
 		if len(parts) > 0 {
 			cmd := parts[0]
 			if idx := strings.Index(cmd, "@"); idx != -1 {
-				text = cmd[:idx] + text[len(cmd):]
+				cmd = cmd[:idx]
+				text = cmd + text[len(parts[0]):]
+			}
+			if isGroup && !knownCommands[cmd] {
+				return nil
 			}
 		}
 	}
@@ -96,7 +117,7 @@ func (r *Router) HandleMessage(ctx context.Context, e tg.Entities, msg *tg.Messa
 			extracted := provider.ExtractURL(url)
 			supported := provider.IsSupported(url)
 			logger.Info("Checking /mp command", "url", url, "extracted", extracted, "supported", supported)
-			
+
 			if extracted != "" && supported {
 				return r.download.Handle(ctx, e, msg, url, true)
 			}
@@ -110,6 +131,9 @@ func (r *Router) HandleMessage(ctx context.Context, e tg.Entities, msg *tg.Messa
 		}
 	}
 	if strings.HasPrefix(text, "/") {
+		if isGroup {
+			return nil
+		}
 		return r.basic.HandleUnknown(ctx, e, msg)
 	}
 
