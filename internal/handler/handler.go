@@ -97,17 +97,16 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 			FileSize: cached.Size,
 		}
 		userName := messaging.GetUserName(e, msg)
-		
+
 		msgSender := messaging.NewSender(api)
 		_, err := msgSender.SendSingle(ctx, inputPeer, &tg.InputReplyToMessage{ReplyToMsgID: msg.ID}, media, dummyInfo, cached.Provider, time.Time{}, url, userName)
-		
+
 		if err == nil {
 			stats.TrackDownload()
 			return nil
 		}
 		logger.Warn("Failed to send cached media, falling back to download", "error", err)
 	}
-
 
 	startTime := time.Now()
 
@@ -117,11 +116,13 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 		return err
 	}
 
-	editMsg(messaging.FormatInitialProgress(infos))
+	editMsg(messaging.FormatInitialProgress(infos, providerName))
+
+	progressTracker := telegram.NewProgressTracker(api, inputPeer, sentMsgID, providerName)
 
 	uploader := telegram.NewUploader(api)
 
-	downloader := download.NewDownloader(h.streamMgr, uploader)
+	downloader := download.NewDownloader(h.streamMgr, uploader, progressTracker)
 	finalAlbum, finalInfos := downloader.Download(ctx, infos, audioOnly)
 
 	if len(finalAlbum) == 0 {
@@ -130,7 +131,7 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 	}
 
 	logger.Info("Starting batch send", "total_items", len(finalAlbum))
-	
+
 	msgSender := messaging.NewSender(api)
 	userName := messaging.GetUserName(e, msg)
 
@@ -162,7 +163,7 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 					media.Title = batchInfos[0].Title
 					media.Size = batchInfos[0].FileSize
 					media.Provider = providerName
-					
+
 					cache.GetInstance().Set(cacheKey, media)
 				}
 			}

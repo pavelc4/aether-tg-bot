@@ -21,12 +21,14 @@ import (
 type Downloader struct {
 	streamMgr *streaming.Manager
 	uploader  *telegram.Uploader
+	progress  *telegram.ProgressTracker
 }
 
-func NewDownloader(sm *streaming.Manager, upl *telegram.Uploader) *Downloader {
+func NewDownloader(sm *streaming.Manager, upl *telegram.Uploader, progress *telegram.ProgressTracker) *Downloader {
 	return &Downloader{
 		streamMgr: sm,
 		uploader:  upl,
+		progress:  progress,
 	}
 }
 
@@ -52,12 +54,12 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 				Width:    info.Width,
 				Height:   info.Height,
 			}
-			
+
 			isHLS := strings.Contains(info.URL, ".m3u8") || strings.Contains(info.URL, ".mpd") || strings.Contains(info.URL, "manifest")
-			
+
 			if isHLS || info.UsePipe {
 				logger.Info("Using piped download strategy", "url", info.URL, "file", info.FileName, "hls", isHLS, "pipe_flag", info.UsePipe)
-				
+
 				args := []string{
 					"-o", "-",
 					"--rm-cache-dir",
@@ -66,7 +68,7 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 					"--fragment-retries", "10",
 					info.URL,
 				}
-				
+
 				if info.UsePipe {
 					if audioOnly {
 						args = append([]string{"-f", "bestaudio[ext=m4a]/bestaudio"}, args...)
@@ -81,7 +83,7 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 						}
 					} else {
 						args = append([]string{"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best", "--merge-output-format", "mkv"}, args...)
-						
+
 						if !strings.HasSuffix(strings.ToLower(info.FileName), ".mkv") {
 							ext := filepath.Ext(info.FileName)
 							if ext != "" {
@@ -97,25 +99,25 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 				if cookies := config.GetYtdlpCookies(); cookies != "" {
 					args = append([]string{"--cookies", cookies}, args...)
 				}
-				
+
 				cmd := exec.CommandContext(ctx, "yt-dlp", args...)
 				var stderr bytes.Buffer
 				cmd.Stderr = &stderr
-				
+
 				stdout, err := cmd.StdoutPipe()
 				if err != nil {
 					logger.Error("Failed to create stdout pipe", "error", err)
 					return
 				}
-				
+
 				if err := cmd.Start(); err != nil {
 					logger.Error("Failed to start yt-dlp pipe", "error", err, "stderr", stderr.String())
 					return
 				}
-				
+
 				// Log yt-dlp command for debugging
 				logger.Info("Started yt-dlp pipe", "file", info.FileName, "args", args[:3])
-				
+
 				input.Reader = &cmdReader{
 					ReadCloser: stdout,
 					cmd:        cmd,
@@ -152,7 +154,13 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 				return d.uploader.UploadChunk(ctx, chunk, fileID, isBig)
 			}
 
-			actualParts, md5sum, err := d.streamMgr.Stream(ctx, input, uploadFn, func(read, total int64) {})
+			progressCb := func(read, total int64) {
+				if d.progress != nil {
+					d.progress.Update(read, total)
+				}
+			}
+
+			actualParts, md5sum, err := d.streamMgr.Stream(ctx, input, uploadFn, progressCb)
 
 			if err != nil {
 				logger.Error("Failed to stream item", "index", i, "error", err)
@@ -202,7 +210,7 @@ func (c *cmdReader) Close() error {
 		if stderrLen > 1000 {
 			stderrStr = "..." + stderrStr[stderrLen-1000:]
 		}
-		
+
 		logger.Error("Pipe process failed",
 			"error", waitErr,
 			"stderr", stderrStr,
@@ -213,6 +221,6 @@ func (c *cmdReader) Close() error {
 	if len(stderrStr) > 0 {
 		logger.Debug("Pipe completed", "stderr_lines", len(stderrStr)/100)
 	}
-	
+
 	return err
 }

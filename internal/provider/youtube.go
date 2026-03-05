@@ -28,7 +28,7 @@ func (yp *YouTubeProvider) Name() string {
 }
 
 func (yp *YouTubeProvider) Supports(url string) bool {
-	return strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") || strings.Contains(url, "tiktok.com")
+	return strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be")
 }
 
 func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Options) ([]VideoInfo, error) {
@@ -76,8 +76,8 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Op
 	}
 
 	usePipe := true
-	finalURL := url 
-	
+	finalURL := url
+
 	filename := fmt.Sprintf("%s.%s", meta.Title, meta.Ext)
 	filename = strings.ReplaceAll(filename, "/", "_")
 	if !opts.AudioOnly && meta.Ext != "mp4" {
@@ -95,14 +95,14 @@ func (yp *YouTubeProvider) GetVideoInfo(ctx context.Context, url string, opts Op
 		size = int64((meta.TBR * 1000 * meta.Duration) / 8)
 	}
 
-	logger.Info("YouTube info resolved", 
-		"title", meta.Title, 
+	logger.Info("YouTube info resolved",
+		"title", meta.Title,
 		"size", size,
 		"res", fmt.Sprintf("%dx%d", meta.Width, meta.Height),
 		"dur", meta.Duration,
 		"pipe", usePipe,
 	)
-	
+
 	mime := "video/mp4"
 	if opts.AudioOnly || meta.Ext == "m4a" || meta.Ext == "mp3" {
 		mime = "audio/" + meta.Ext
@@ -146,7 +146,7 @@ type ytdlpMeta struct {
 	Duration    float64           `json:"duration"`
 	FileSize    int64             `json:"filesize,omitempty"`
 	FileSizeApp int64             `json:"filesize_approx,omitempty"`
-	TBR         float64           `json:"tbr,omitempty"` 
+	TBR         float64           `json:"tbr,omitempty"`
 	HttpHeaders map[string]string `json:"http_headers"`
 	Formats     []ytdlpFormat     `json:"formats"`
 }

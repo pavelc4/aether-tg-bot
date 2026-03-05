@@ -12,24 +12,30 @@ import (
 )
 
 type ProgressTracker struct {
-	api          *tg.Client
-	peer         tg.InputPeerClass
-	msgID        int
-	lastTime     time.Time
-	lastBytes    int64
-	startTime    time.Time
-	mu           sync.Mutex
-	minPeriod    time.Duration
-	title        string
+	api       *tg.Client
+	peer      tg.InputPeerClass
+	msgID     int
+	lastTime  time.Time
+	lastBytes int64
+	startTime time.Time
+	mu        sync.Mutex
+	minPeriod time.Duration
+	title     string
+	engine    string
 }
 
-func NewProgressTracker(api *tg.Client, peer tg.InputPeerClass, msgID int) *ProgressTracker {
+func NewProgressTracker(api *tg.Client, peer tg.InputPeerClass, msgID int, engine string) *ProgressTracker {
+	engineDisplay := engine
+	if engineDisplay == "" {
+		engineDisplay = "yt-dlp + Bun"
+	}
 	return &ProgressTracker{
 		api:       api,
 		peer:      peer,
 		msgID:     msgID,
-		minPeriod: 4 * time.Second,
+		minPeriod: 5 * time.Second,
 		startTime: time.Now(),
+		engine:    engineDisplay,
 	}
 }
 
@@ -61,9 +67,9 @@ func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
 		}
 	}
 
-	const fullBar = "■■■■■■■■■■■■"  
-	const emptyBar = "□□□□□□□□□□□□" 
-	
+	const fullBar = "■■■■■■■■■■■■"
+	const emptyBar = "□□□□□□□□□□□□"
+
 	filled := int(percent / 100 * 12)
 	if filled > 12 {
 		filled = 12
@@ -71,7 +77,7 @@ func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
 	bar := fullBar[:filled] + emptyBar[filled:]
 
 	elapsed := time.Since(pt.startTime)
-	
+
 	title := pt.title
 	if title == "" {
 		title = "Download"
@@ -81,14 +87,14 @@ func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
 	}
 
 	text := fmt.Sprintf(
-		"🎥 <b>%s</b>\n"+
-		"┌ Status : <code>Downloading... (%.1f%%)</code>\n"+
-		"├ [<code>%s</code>]\n"+
-		"├ Size : <code>%s</code>\n"+
-		"├ Processed : <code>%s</code>\n"+
-		"├ Speed : <code>%s/s</code>\n"+
-		"├ Time : <code>%s</code>\n"+
-		"└ Engine : <code>yt-dlp</code>",
+		"🎥 <b>%s</b>\n\n"+
+			"┌ Status : <code>Downloading... (%.1f%%)</code>\n"+
+			"├ [<code>%s</code>]\n"+
+			"├ Size : <code>%s</code>\n"+
+			"├ Processed : <code>%s</code>\n"+
+			"├ Speed : <code>%s/s</code>\n"+
+			"├ Time : <code>%s</code>\n"+
+			"└ Engine : <code>%s</code>",
 		title,
 		percent,
 		bar,
@@ -96,12 +102,13 @@ func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
 		utils.FormatBytes(uint64(uploadedBytes)),
 		utils.FormatBytes(uint64(speed)),
 		utils.FormatDuration(elapsed),
+		pt.engine,
 	)
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		_, err := pt.api.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 			Peer:    pt.peer,
 			ID:      pt.msgID,

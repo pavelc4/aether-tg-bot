@@ -23,10 +23,9 @@ func New() (*App, error) {
 
 	cfg := config.LoadConfig()
 
-	provider.Register(provider.NewCobalt())
-	provider.Register(provider.NewYouTube())
 	provider.Register(provider.NewTikTok())
-
+	provider.Register(provider.NewYouTube())
+	provider.Register(provider.NewCobalt())
 
 	maxStreams := cfg.MaxConcurrentStreams
 	if maxStreams <= 0 {
@@ -49,9 +48,8 @@ func New() (*App, error) {
 		RetryLimit:           config.DefaultRetryLimit,
 	})
 
-
 	dispatcher := tg.NewUpdateDispatcher()
-	
+
 	client, err := telegram.NewClient(cfg, dispatcher)
 	if err != nil {
 		return nil, err
@@ -63,14 +61,14 @@ func New() (*App, error) {
 	speedtestHandler := handler.NewSpeedtestHandler(client)
 
 	router := bot.NewRouter(dlHandler, adminHandler, basicHandler, speedtestHandler)
-	
+
 	dispatcher.OnNewMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewMessage) error {
 		handler := func() {
 			if err := router.OnMessage(ctx, e, update); err != nil {
 				logger.Error("OnMessage failed", "error", err)
 			}
 		}
-		go middleware.Chain(handler, 
+		go middleware.Chain(handler,
 			middleware.Recover,
 			func(next func()) func() { return middleware.Logger("OnNewMessage", next) },
 		)()
@@ -83,15 +81,15 @@ func New() (*App, error) {
 				logger.Error("OnChannelMessage failed", "error", err)
 			}
 		}
-		go middleware.Chain(handler, 
+		go middleware.Chain(handler,
 			middleware.Recover,
 			func(next func()) func() { return middleware.Logger("OnNewChannelMessage", next) },
 		)()
 		return nil
 	})
-	
+
 	b := bot.New(client, router)
-	
+
 	logger.Info("Application initialized successfully")
 	return &App{
 		Bot: b,
