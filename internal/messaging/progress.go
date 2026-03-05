@@ -11,7 +11,7 @@ func FormatInitialProgress(infos []provider.VideoInfo, providerName string) stri
 	engineDisplay := getEngineDisplay(providerName)
 
 	if len(infos) == 0 {
-		return fmt.Sprintf("🎥 <b>Download</b>\n\n┌ Status : <code>Starting...</code>\n└ Engine : <code>%s</code>", engineDisplay)
+		return fmt.Sprintf("🎥 Downloading... (Engine: %s)", engineDisplay)
 	}
 
 	totalSize := formatTotalSize(infos)
@@ -20,19 +20,7 @@ func FormatInitialProgress(infos []provider.VideoInfo, providerName string) stri
 		title = title[:37] + "..."
 	}
 
-	return fmt.Sprintf(
-		"🎥 <b>%s</b>\n\n"+
-			"┌ Status : <code>Starting...</code>\n"+
-			"├ [<code>□□□□□□□□□□□□</code>]\n"+
-			"├ Ukuran : <code>%s</code>\n"+
-			"├ Diproses : <code>0 B</code>\n"+
-			"├ Kecepatan : <code>-</code>\n"+
-			"├ Waktu : <code>0s</code>\n"+
-			"└ Engine : <code>%s</code>",
-		title,
-		totalSize,
-		engineDisplay,
-	)
+	return fmt.Sprintf("🎥 %s | %s | Engine: %s", title, totalSize, engineDisplay)
 }
 
 func formatTotalSize(infos []provider.VideoInfo) string {

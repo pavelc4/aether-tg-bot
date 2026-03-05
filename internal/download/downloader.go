@@ -21,14 +21,12 @@ import (
 type Downloader struct {
 	streamMgr *streaming.Manager
 	uploader  *telegram.Uploader
-	progress  *telegram.ProgressTracker
 }
 
-func NewDownloader(sm *streaming.Manager, upl *telegram.Uploader, progress *telegram.ProgressTracker) *Downloader {
+func NewDownloader(sm *streaming.Manager, upl *telegram.Uploader) *Downloader {
 	return &Downloader{
 		streamMgr: sm,
 		uploader:  upl,
-		progress:  progress,
 	}
 }
 
@@ -154,13 +152,7 @@ func (d *Downloader) Download(ctx context.Context, infos []provider.VideoInfo, a
 				return d.uploader.UploadChunk(ctx, chunk, fileID, isBig)
 			}
 
-			progressCb := func(read, total int64) {
-				if d.progress != nil {
-					d.progress.Update(read, total)
-				}
-			}
-
-			actualParts, md5sum, err := d.streamMgr.Stream(ctx, input, uploadFn, progressCb)
+			actualParts, md5sum, err := d.streamMgr.Stream(ctx, input, uploadFn, nil)
 
 			if err != nil {
 				logger.Error("Failed to stream item", "index", i, "error", err)

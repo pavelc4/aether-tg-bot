@@ -118,11 +118,9 @@ func (h *DownloadHandler) Handle(ctx context.Context, e tg.Entities, msg *tg.Mes
 
 	editMsg(messaging.FormatInitialProgress(infos, providerName))
 
-	progressTracker := telegram.NewProgressTracker(api, inputPeer, sentMsgID, providerName)
-
 	uploader := telegram.NewUploader(api)
 
-	downloader := download.NewDownloader(h.streamMgr, uploader, progressTracker)
+	downloader := download.NewDownloader(h.streamMgr, uploader)
 	finalAlbum, finalInfos := downloader.Download(ctx, infos, audioOnly)
 
 	if len(finalAlbum) == 0 {

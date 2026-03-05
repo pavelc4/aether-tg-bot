@@ -16,19 +16,14 @@ type ProgressTracker struct {
 	peer      tg.InputPeerClass
 	msgID     int
 	lastTime  time.Time
-	lastBytes int64
 	startTime time.Time
 	mu        sync.Mutex
 	minPeriod time.Duration
-	title     string
 	engine    string
 }
 
 func NewProgressTracker(api *tg.Client, peer tg.InputPeerClass, msgID int, engine string) *ProgressTracker {
-	engineDisplay := engine
-	if engineDisplay == "" {
-		engineDisplay = "yt-dlp + Bun"
-	}
+	engineDisplay := convertEngineName(engine)
 	return &ProgressTracker{
 		api:       api,
 		peer:      peer,
@@ -39,10 +34,23 @@ func NewProgressTracker(api *tg.Client, peer tg.InputPeerClass, msgID int, engin
 	}
 }
 
+func convertEngineName(providerName string) string {
+	switch providerName {
+	case "TikTok":
+		return "TikWM API"
+	case "YouTube":
+		return "yt-dlp"
+	case "Cobalt":
+		return "Cobalt API"
+	default:
+		if providerName != "" {
+			return providerName
+		}
+		return "yt-dlp + Bun"
+	}
+}
+
 func (pt *ProgressTracker) SetTitle(title string) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	pt.title = title
 }
 
 func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
@@ -59,48 +67,13 @@ func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
 		percent = float64(uploadedBytes) / float64(totalBytes) * 100
 	}
 
-	speed := int64(0)
-	if pt.lastBytes > 0 && !pt.lastTime.IsZero() {
-		elapsed := now.Sub(pt.lastTime).Seconds()
-		if elapsed > 0 {
-			speed = int64(float64(uploadedBytes-pt.lastBytes) / elapsed)
-		}
-	}
-
-	const fullBar = "■■■■■■■■■■■■"
-	const emptyBar = "□□□□□□□□□□□□"
-
-	filled := int(percent / 100 * 12)
-	if filled > 12 {
-		filled = 12
-	}
-	bar := fullBar[:filled] + emptyBar[filled:]
-
 	elapsed := time.Since(pt.startTime)
 
-	title := pt.title
-	if title == "" {
-		title = "Download"
-	}
-	if len(title) > 40 {
-		title = title[:37] + "..."
-	}
-
 	text := fmt.Sprintf(
-		"🎥 <b>%s</b>\n\n"+
-			"┌ Status : <code>Downloading... (%.1f%%)</code>\n"+
-			"├ [<code>%s</code>]\n"+
-			"├ Size : <code>%s</code>\n"+
-			"├ Processed : <code>%s</code>\n"+
-			"├ Speed : <code>%s/s</code>\n"+
-			"├ Time : <code>%s</code>\n"+
-			"└ Engine : <code>%s</code>",
-		title,
+		"🎥 Uploading... %.1f%% | %s / %s | %s | Engine: %s",
 		percent,
-		bar,
-		utils.FormatBytes(uint64(totalBytes)),
 		utils.FormatBytes(uint64(uploadedBytes)),
-		utils.FormatBytes(uint64(speed)),
+		utils.FormatBytes(uint64(totalBytes)),
 		utils.FormatDuration(elapsed),
 		pt.engine,
 	)
@@ -120,5 +93,4 @@ func (pt *ProgressTracker) Update(uploadedBytes, totalBytes int64) {
 	}()
 
 	pt.lastTime = now
-	pt.lastBytes = uploadedBytes
 }

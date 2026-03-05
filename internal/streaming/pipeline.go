@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/pavelc4/aether-tg-bot/pkg/buffer"
 	pkghttp "github.com/pavelc4/aether-tg-bot/pkg/http"
@@ -60,7 +61,7 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 		logger.Error("Stream size unknown, MTProto upload would fail", "url", input.URL)
 		return 0, "", fmt.Errorf("unknown stream size (required for MTProto)")
 	}
-	
+
 	chunkChan := make(chan Chunk, p.config.BufferSize)
 	errChan := make(chan error, 1)
 	var wg sync.WaitGroup
@@ -68,25 +69,21 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	numWorkers := 1
+	numWorkers := p.config.MinUploadWorkers
 	if state.TotalSize > 0 {
-		calculated := int(state.TotalSize / (1 * 1024 * 1024))
-		if calculated > p.config.MaxUploadWorkers {
-			numWorkers = p.config.MaxUploadWorkers
-		} else if calculated < p.config.MinUploadWorkers {
-			numWorkers = p.config.MinUploadWorkers
-		} else {
-			numWorkers = calculated
+		parts := state.TotalParts
+		if parts > 0 {
+			numWorkers = parts / 10
+			if numWorkers < p.config.MinUploadWorkers {
+				numWorkers = p.config.MinUploadWorkers
+			} else if numWorkers > p.config.MaxUploadWorkers {
+				numWorkers = p.config.MaxUploadWorkers
+			}
 		}
-	} else {
-		numWorkers = p.config.MinUploadWorkers
-	}
-	if numWorkers < 1 { 
-		numWorkers = 1 
 	}
 
-	logger.Info("Starting upload pipeline", 
-		"workers", numWorkers, 
+	logger.Info("Starting upload pipeline",
+		"workers", numWorkers,
 		"size_mb", state.TotalSize/1024/1024,
 	)
 
@@ -100,7 +97,8 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 				}
 
 				var err error
-				for attempt := 0; attempt <= p.config.RetryLimit; attempt++ {
+				var attempt int
+				for attempt = 0; attempt <= p.config.RetryLimit; attempt++ {
 					err = p.upload(ctx, chunk, state.FileID)
 					if err == nil {
 						break
@@ -109,12 +107,20 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 					if ctx.Err() != nil {
 						return
 					}
+
+					if attempt < p.config.RetryLimit {
+						backoff := time.Duration(100<<attempt) * time.Millisecond
+						if backoff > 2*time.Second {
+							backoff = 2 * time.Second
+						}
+						time.Sleep(backoff)
+					}
 				}
 
 				if err != nil {
 					select {
-					case errChan <- fmt.Errorf("worker %d failed to upload part %d: %w", id, chunk.PartNum, err):
-						cancel() // Stop other workers
+					case errChan <- fmt.Errorf("worker %d failed to upload part %d after %d attempts: %w", id, chunk.PartNum, attempt+1, err):
+						cancel()
 					default:
 					}
 					return
@@ -123,7 +129,7 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 				state.mu.Lock()
 				state.UploadedParts[chunk.PartNum] = true
 				state.mu.Unlock()
-				
+
 				if p.update != nil {
 					p.update(int64(chunk.Size), state.TotalSize)
 				}
@@ -134,10 +140,10 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 
 	totalParts := 0
 	md5Result := ""
-	
+
 	go func() {
 		defer close(chunkChan)
-		
+
 		hasher := md5.New()
 		partNum := 0
 		for {
@@ -150,12 +156,12 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 				buf = make([]byte, p.config.ChunkSize)
 			}
 			buf = buf[:p.config.ChunkSize]
-			
+
 			n, readErr := io.ReadFull(body, buf)
 			if n > 0 {
 				// Write to haser
 				hasher.Write(buf[:n])
-				
+
 				select {
 				case chunkChan <- Chunk{PartNum: partNum, TotalParts: state.TotalParts, Data: buf[:n], Size: n}:
 					partNum++
@@ -189,7 +195,7 @@ func (p *Pipeline) Start(ctx context.Context, input StreamInput, state *StreamSt
 			return totalParts, "", ctx.Err()
 		}
 	}
-	
+
 	if totalParts == 0 {
 		return 0, "", fmt.Errorf("stream returned no data")
 	}
