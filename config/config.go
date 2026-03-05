@@ -5,12 +5,37 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
 )
+
+func init() {
+	configureGC()
+}
+
+func configureGC() {
+	if val := os.Getenv("GOGC"); val != "" {
+		if v, err := strconv.Atoi(val); err == nil && v > 0 {
+			debug.SetGCPercent(v)
+		}
+	}
+
+	if val := os.Getenv("GOMEMLIMIT"); val != "" {
+		if limit, err := strconv.ParseInt(val, 10, 64); err == nil && limit > 0 {
+			debug.SetMemoryLimit(limit)
+		}
+	}
+
+	if val := os.Getenv("GOMAXPROCS"); val != "" {
+		if v, err := strconv.Atoi(val); err == nil && v > 0 {
+			runtime.GOMAXPROCS(v)
+		}
+	}
+}
 
 const (
 	EnvBotToken          = "BOT_TOKEN"
@@ -27,13 +52,13 @@ const (
 )
 
 const (
-	DefaultCobaltAPI            = ""
-	DefaultMaxFileSize          = 2000 // MB (MTProto limit ~2GB/4GB)
-	DefaultEnableAdaptive       = true
-	DefaultUpdateTimeout        = 60
-	DefaultWorkerPoolSize       = 100
-	DefaultShutdownTimeout      = 30
-	DefaultProcessingTimeout    = 10
+	DefaultCobaltAPI         = ""
+	DefaultMaxFileSize       = 2000 // MB (MTProto limit ~2GB/4GB)
+	DefaultEnableAdaptive    = true
+	DefaultUpdateTimeout     = 60
+	DefaultWorkerPoolSize    = 100
+	DefaultShutdownTimeout   = 30
+	DefaultProcessingTimeout = 10
 
 	// Streaming Defaults
 	DefaultMaxConcurrentStreams = 8
@@ -43,33 +68,33 @@ const (
 	DefaultMinUploadWorkers     = 1
 	DefaultMaxUploadWorkers     = 8
 	DefaultRetryLimit           = 3
-	
-	EnvMaxConcurrentStreams     = "MAX_CONCURRENT_STREAMS"
-	EnvMinUploadWorkers         = "MIN_UPLOAD_WORKERS"
-	EnvMaxUploadWorkers         = "MAX_UPLOAD_WORKERS"
+
+	EnvMaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
+	EnvMinUploadWorkers     = "MIN_UPLOAD_WORKERS"
+	EnvMaxUploadWorkers     = "MAX_UPLOAD_WORKERS"
 )
 
 type Config struct {
-	AppID      int
-	AppHash    string
-	BotToken   string
-	SessionDir string
-	TempDir    string
-	CookiesDir string
-	CobaltAPI         string
-	CobaltAPIKey      string
-	YtdlpCookies      string
-	OwnerID           int64
-	EnableAdaptive    bool
-	MaxFileSizeMB     int64
+	AppID                int
+	AppHash              string
+	BotToken             string
+	SessionDir           string
+	TempDir              string
+	CookiesDir           string
+	CobaltAPI            string
+	CobaltAPIKey         string
+	YtdlpCookies         string
+	OwnerID              int64
+	EnableAdaptive       bool
+	MaxFileSizeMB        int64
 	MaxFileSizeBytes     int64
 	MaxConcurrentStreams int
 	UpdateTimeout        int
 	WorkerPoolSize       int
 	ShutdownTimeout      time.Duration
 	ProcessingTimeout    time.Duration
-	MinUploadWorkers int
-	MaxUploadWorkers int
+	MinUploadWorkers     int
+	MaxUploadWorkers     int
 }
 
 var currentConfig *Config
@@ -81,22 +106,22 @@ func init() {
 
 func LoadConfig() *Config {
 	cfg := &Config{
-		AppID:             getIntEnv("TELEGRAM_APP_ID", 0),
-		AppHash:           os.Getenv("TELEGRAM_APP_HASH"),
-		BotToken:          os.Getenv(EnvBotToken),
-		SessionDir:        getEnvWithDefault("SESSION_DIR", "data"),
-		TempDir:           getEnvWithDefault("TEMP_DIR", "tmp"),
-		CookiesDir:        getEnvWithDefault("COOKIES_DIR", "cookies"),
-		CobaltAPI:         getEnvWithDefault(EnvCobaltAPI, DefaultCobaltAPI),
-		CobaltAPIKey:      os.Getenv(EnvCobaltAPIKey),
-		YtdlpCookies:      os.Getenv(EnvYtdlpCookies),
+		AppID:                getIntEnv("TELEGRAM_APP_ID", 0),
+		AppHash:              os.Getenv("TELEGRAM_APP_HASH"),
+		BotToken:             os.Getenv(EnvBotToken),
+		SessionDir:           getEnvWithDefault("SESSION_DIR", "data"),
+		TempDir:              getEnvWithDefault("TEMP_DIR", "tmp"),
+		CookiesDir:           getEnvWithDefault("COOKIES_DIR", "cookies"),
+		CobaltAPI:            getEnvWithDefault(EnvCobaltAPI, DefaultCobaltAPI),
+		CobaltAPIKey:         os.Getenv(EnvCobaltAPIKey),
+		YtdlpCookies:         os.Getenv(EnvYtdlpCookies),
 		EnableAdaptive:       getBoolEnv(EnvEnableAdaptive, DefaultEnableAdaptive),
 		MaxConcurrentStreams: getIntEnv(EnvMaxConcurrentStreams, 0), // 0 means use adaptive/default
 		UpdateTimeout:        getIntEnv(EnvUpdateTimeout, DefaultUpdateTimeout),
-		WorkerPoolSize:    getIntEnv(EnvWorkerPoolSize, DefaultWorkerPoolSize),
-		ShutdownTimeout:   getDurationEnv(EnvShutdownTimeout, DefaultShutdownTimeout, time.Second),
-		ProcessingTimeout: getDurationEnv(EnvProcessingTimeout, DefaultProcessingTimeout, time.Minute),
-		MinUploadWorkers:  getIntEnv(EnvMinUploadWorkers, DefaultMinUploadWorkers),
+		WorkerPoolSize:       getIntEnv(EnvWorkerPoolSize, DefaultWorkerPoolSize),
+		ShutdownTimeout:      getDurationEnv(EnvShutdownTimeout, DefaultShutdownTimeout, time.Second),
+		ProcessingTimeout:    getDurationEnv(EnvProcessingTimeout, DefaultProcessingTimeout, time.Minute),
+		MinUploadWorkers:     getIntEnv(EnvMinUploadWorkers, DefaultMinUploadWorkers),
 	}
 	cores := runtime.NumCPU()
 	defaultMaxUploads := cores * 4
@@ -106,7 +131,7 @@ func LoadConfig() *Config {
 	if defaultMaxUploads > 64 {
 		defaultMaxUploads = 64
 	}
-	
+
 	if valStr := os.Getenv(EnvMaxUploadWorkers); valStr != "" {
 		cfg.MaxUploadWorkers = getIntEnv(EnvMaxUploadWorkers, defaultMaxUploads)
 	} else {

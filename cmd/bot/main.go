@@ -4,11 +4,24 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/pavelc4/aether-tg-bot/internal/app"
 	"github.com/pavelc4/aether-tg-bot/pkg/logger"
 )
+
+func init() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
+	if memLimit := os.Getenv("GOMEMLIMIT"); memLimit == "" {
+		if limit := runtime.MemProfileRate; limit > 0 {
+			runtime.MemProfileRate = 512 * 1024
+		}
+	}
+
+	logger.Info("GC optimized", "procs", runtime.NumCPU())
+}
 
 func main() {
 
@@ -17,7 +30,6 @@ func main() {
 		logger.Error("Failed to initialize app", "error", err)
 		os.Exit(1)
 	}
-
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
